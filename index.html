@@ -669,7 +669,7 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 .os-x:hover{color:var(--alto)}
 .os-barra{display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:20px 0 12px}
 .os-barra .botao{padding:9px 16px}
-#abaOrdens tbody tr, #abaMonitor tbody tr{cursor:default}
+#abaOrdens tbody tr{cursor:default}
 .os-aviso{margin-top:20px; padding:12px 16px; background:var(--sup2); border:1px solid var(--borda); border-left:4px solid var(--amarelo); border-radius:var(--raio); font-size:14px; line-height:1.5}
 .mon-aviso{display:flex; gap:10px; align-items:flex-start; padding:12px 16px; border-left:4px solid var(--medio); background:var(--sup2); margin-top:10px; font-size:14px}
 .mon-aviso.alto{border-color:var(--alto)} .mon-aviso.baixo{border-color:var(--baixo)}
@@ -707,7 +707,6 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
       <button id="btMaquinas" role="tab">Máquinas</button>
       <button id="btOrdens" role="tab">Ordens</button>
       <button id="btEconomia" role="tab">Economia</button>
-      <button id="btMonitor" role="tab">Monitor</button>
       <button id="btTecnica" role="tab">Técnica</button>
     </div>
     <button class="icone-bt" id="btTema" title="Alternar modo claro/escuro" aria-label="Alternar modo claro/escuro"></button>
@@ -870,7 +869,6 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 <main id="abaOrdens" class="pagina" hidden>
   <section style="padding-top:40px">
     <h1>Ordens de serviço</h1>
-    <p class="secundario" style="margin-top:8px">Transforme a lista de prioridade em trabalho: atribua um técnico e, depois da visita, confirme se houve troca da peça e se houve falha. Falha confirmada vai para a tabela de falhas; troca confirmada vai para a tabela de manutenção (troca sem falha = manutenção preventiva).</p>
     <div class="os-aviso" role="note">
       <b>Atenção: gravação protegida por senha.</b>
       Ao clicar em <b>Confirmar</b>, o site pede a senha de acesso. Sem a senha correta, o servidor recusa a ordem e nada é gravado nas tabelas de falhas e manutenção. Não compartilhe a senha.
@@ -895,34 +893,6 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
       </table>
     </div>
     <p class="nota">Responda “Troca de peça” e “Falha” e clique em Confirmar: o registro é enviado à AWS (data = 06:00 do dia da previsão) e a ordem fica travada. Com troca de peça, técnico, fornecedor e custo são obrigatórios. Falha = Sim conta como alerta confirmado (verdadeiro positivo); Falha = Não conta como alarme falso. Troca = Sim e Falha = Não é manutenção preventiva e vai só para a tabela de manutenção.</p>
-  </section>
-</main>
-
-<!-- ===================== ABA MONITOR ===================== -->
-<main id="abaMonitor" class="pagina" hidden>
-  <section style="padding-top:40px">
-    <h1>Monitor do modelo e dos dados</h1>
-    <div class="kpis" id="monKpis"></div>
-    <div id="monAvisos"></div>
-  </section>
-
-  <section class="secao">
-    <h2>Volume de alertas por dia</h2>
-    <div class="cartao" style="margin-top:16px;padding:16px">
-      <div id="graficoMonAlertas" class="grafico" style="height:260px"></div>
-    </div>
-    <p class="nota" id="monNotaVol"></p>
-  </section>
-
-  <section class="secao">
-    <h2>Qualidade da base recebida</h2>
-    <div class="cartao" style="margin-top:16px">
-      <p class="secundario">Envie o CSV de telemetria (uma linha por leitura). A verificação roda no seu navegador e nada é enviado.</p>
-      <div class="os-barra"><input type="file" id="monArquivo" accept=".csv,.txt"><span class="nota" id="monArqInfo" style="margin:0"></span></div>
-      <div class="tabela-caixa" style="max-height:340px;border:0" id="monQualCaixa" hidden>
-        <table><thead><tr><th>coluna / verificação</th><th>resultado</th><th>situação</th></tr></thead><tbody id="monQual"></tbody></table>
-      </div>
-    </div>
   </section>
 </main>
 
@@ -987,22 +957,11 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
   </section>
 
   <section class="secao">
-    <h2>Como foi construído e avaliado</h2>
-    <div class="grade-2" style="margin-top:16px">
-      <div class="cartao">
-        <h3>Pipeline</h3>
-        <ul class="secundario" style="padding-left:18px;margin:10px 0 0">
-          <li><b>Tarefa:</b> para cada máquina e dia D, prever P(falha da peça até 06:00 de D+1) usando dados até 05:00 de D.</li>
-          <li><b>Modelos:</b> LightGBM + ensemble (HGB, LGBMRanker, CatBoost, XGBoost).</li>
-          <li><b>Truques:</b> pseudo-falhas e retreino mensal.</li>
-          <li><b>Variáveis-chave:</b> desvio do sensor da peça, visitas desde a troca, troca corretiva.</li>
-          <li><b>Métrica:</b> AP média das 4 peças (avalia a ordenação, não a calibração).</li>
-        </ul>
-      </div>
-      <div class="cartao" style="padding:16px">
-        <div id="graficoAP" class="grafico" style="height:240px"></div>
-      </div>
+    <h2>Volume de alertas por dia</h2>
+    <div class="cartao" style="margin-top:16px;padding:16px">
+      <div id="graficoMonAlertas" class="grafico" style="height:260px"></div>
     </div>
+    <p class="nota" id="monNotaVol"></p>
   </section>
 
   <footer>Custos, IDs e histórico de trocas são reais (manutencao.csv). AP por peça e sensores são de exemplo; as probabilidades vêm do submission_v11a.csv (exportar_dados_site.py).</footer>
@@ -1599,22 +1558,6 @@ function desenharDetalheTecnico(){
   }, true);
 }
 
-// AP por peça (valores de EXEMPLO)
-function desenharAP(){
-  graficos.ap = graficos.ap || echarts.init(document.getElementById('graficoAP'));
-  graficos.ap.setOption({
-    grid:{ left:40, right:12, top:20, bottom:30 },
-    tooltip:{ trigger:'axis' },
-    xAxis:{ type:'category', data:['peça A','peça B','peça C','peça D'], axisLabel:{ color:TEMA.tx2 }, axisLine:{ lineStyle:{ color:TEMA.bordaForte } } },
-    yAxis:{ type:'value', min:0, max:1, axisLabel:{ color:TEMA.tx3 }, splitLine:{ lineStyle:{ color:TEMA.borda } } },
-    series:[{
-      type:'bar', data:[0.72, 0.61, 0.70, 0.65], barWidth:'45%', itemStyle:{ color:TEMA.azul, borderRadius:[4,4,0,0] },
-      label:{ show:true, position:'top', color:TEMA.tx, fontFamily:'Poppins', formatter:x => fmtProb(x.value) },
-      markLine:{ silent:true, symbol:'none', lineStyle:{ color:TEMA.tx2, type:'dashed' }, label:{ color:TEMA.tx2, formatter:'média 0,67' }, data:[{ yAxis:0.67 }] },
-    }],
-  }, true);
-}
-
 function montarControlesTecnicos(){
   const selModelo = document.getElementById('filtroModelo');
   [...new Set(MAQUINAS.map(m => m.modelo))].sort().forEach(md => selModelo.add(new Option(md, md)));
@@ -1629,7 +1572,7 @@ function desenharTecnica(){
   desenharTabela();
   desenharCalor();
   desenharDetalheTecnico();
-  desenharAP();
+  desenharAlertasDia();
 }
 
 /* =========================================================
@@ -1644,12 +1587,10 @@ function mostrarAba(aba){
   document.getElementById('abaMaquinas').hidden = aba !== 'maquinas';
   document.getElementById('abaEconomia').hidden = aba !== 'economia';
   document.getElementById('abaOrdens').hidden = aba !== 'ordens';
-  document.getElementById('abaMonitor').hidden = aba !== 'monitor';
   document.getElementById('btSimples').classList.toggle('ativo', aba === 'simples');
   document.getElementById('btMaquinas').classList.toggle('ativo', aba === 'maquinas');
   document.getElementById('btEconomia').classList.toggle('ativo', aba === 'economia');
   document.getElementById('btOrdens').classList.toggle('ativo', aba === 'ordens');
-  document.getElementById('btMonitor').classList.toggle('ativo', aba === 'monitor');
   document.getElementById('btTecnica').classList.toggle('ativo', aba === 'tecnica');
   atualizar();
 }
@@ -1661,7 +1602,6 @@ function atualizar(){
   else if(estado.aba === 'maquinas') desenharMaquinas();
   else if(estado.aba === 'economia') desenharEconomia();
   else if(estado.aba === 'ordens') desenharOrdens();
-  else if(estado.aba === 'monitor') desenharMonitor();
   else desenharTecnica();
   Object.values(graficos).forEach(g => g.resize());
 }
@@ -1671,7 +1611,6 @@ document.getElementById('btTecnica').onclick = () => mostrarAba('tecnica');
 document.getElementById('btMaquinas').onclick = () => mostrarAba('maquinas');
 document.getElementById('btEconomia').onclick = () => mostrarAba('economia');
 document.getElementById('btOrdens').onclick = () => mostrarAba('ordens');
-document.getElementById('btMonitor').onclick = () => mostrarAba('monitor');
 window.addEventListener('resize', () => Object.values(graficos).forEach(g => g.resize()));
 
 /* =========================================================
@@ -3943,7 +3882,7 @@ document.getElementById('osExportar').onclick = () => {
   a.download = 'feedback_tecnicos.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
-/* ---------- Monitor ---------- */
+/* ---------- Volume de alertas por dia (aba Técnica) ---------- */
 const MON = { alto:null, medio:null };
 function monContagem(){
   if(MON.alto) return;
@@ -3959,26 +3898,9 @@ function monContagem(){
 }
 const mediaDe = v => v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
 
-function desenharMonitor(){
+function desenharAlertasDia(){
   monContagem();
-  const d = estado.dia, tot = MON.alto.map((a, i) => a + MON.medio[i]);
-  const rec = tot.slice(Math.max(0, d - 6), d + 1), base = tot.slice(Math.max(0, d - 36), Math.max(1, d - 6));
-  const mr = mediaDe(rec), mb = mediaDe(base), razao = mb > 0 ? mr / mb : 1;
-  const s = osStats(), avisos = [];
-  if(d >= 14 && (razao > 1.5 || razao < 0.5)) avisos.push(['medio', `Volume de alertas fora do padrão: média de ${mr.toFixed(1)}/dia nos últimos 7 dias contra ${mb.toFixed(1)}/dia antes. Verifique se os sensores ou a base enviada mudaram.`]);
-  if(s.conc >= 5 && s.prec < 0.4) avisos.push(['alto', `Precisão observada de ${Math.round(s.prec * 100)}% em ${s.conc} ordens: muitos alarmes falsos. Considere retreinar o modelo ou revisar o limiar de risco.`]);
-  else if(s.conc >= 5 && s.prec < 0.6) avisos.push(['medio', `Precisão observada de ${Math.round(s.prec * 100)}% em ${s.conc} ordens, abaixo do esperado. Acompanhe nas próximas semanas.`]);
-  if(s.conc < 5) avisos.push(['medio', `Só ${s.conc} ordem(ns) concluída(s): a precisão observada ainda não é confiável. Registre o retorno dos técnicos na aba Ordens.`]);
-  if(!avisos.some(a => a[0] === 'alto' || a[0] === 'medio')) avisos.push(['baixo', 'Nenhum sinal de degradação no momento.']);
-  const crit = avisos.some(a => a[0] === 'alto'), aten = avisos.some(a => a[0] === 'medio');
-  const sit = crit ? ['alto','Retreinar'] : aten ? ['medio','Atenção'] : ['baixo','Saudável'];
-  document.getElementById('monKpis').innerHTML = [
-    ['AP · validação', '0,67–0,69'], ['AP · Kaggle', '0,643'],
-    ['Precisão observada', s.prec == null ? '–' : Math.round(s.prec * 100) + '%'],
-    ['Alertas/dia (7 dias)', mr.toFixed(1)],
-    ['Situação', `<span class="selo ${sit[0]}" style="font-size:16px">${sit[1]}</span>`]
-  ].map(k => `<div class="kpi"><div class="rotulo">${k[0]}</div><div class="valor" style="font-size:${k[0] === 'Situação' ? 16 : 32}px;padding-top:${k[0] === 'Situação' ? 10 : 0}px">${k[1]}</div></div>`).join('');
-  document.getElementById('monAvisos').innerHTML = avisos.map(a => `<div class="mon-aviso ${a[0]}">${esc(a[1])}</div>`).join('');
+  const d = estado.dia;
   document.getElementById('monNotaVol').textContent = 'Alertas = pares máquina × peça com risco ≥ ' + fmtPct(LIMITE_MEDIO) + ' (Possível) ou ≥ ' + fmtPct(LIMITE_ALTO) + ' (Muito provável). A linha tracejada marca o dia escolhido no topo. A AP vem da validação do modelo; a precisão observada vem do retorno dos técnicos.';
   const g = graficos.monAlertas = graficos.monAlertas || echarts.init(document.getElementById('graficoMonAlertas'));
   const dias = MON.alto.map((_, i) => fmtData(dataDoDia(i)));
@@ -3995,55 +3917,6 @@ function desenharMonitor(){
   }, true);
   g.resize();
 }
-
-/* ---------- verificação de qualidade do CSV ---------- */
-function monAnalisarCSV(texto){
-  const linhas = texto.replace(/^\ufeff/, '').split(/\r?\n/).filter(l => l.trim());
-  if(linhas.length < 2) return null;
-  const sep = (linhas[0].match(/;/g) || []).length > (linhas[0].match(/,/g) || []).length ? ';' : ',';
-  const cab = linhas[0].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
-  const rows = linhas.slice(1).map(l => l.split(sep).map(c => c.trim().replace(/^"|"$/g, '')));
-  const iMaq = cab.findIndex(c => /maq|machine|bomba/i.test(c)), iTempo = cab.findIndex(c => /data|time|hora|date/i.test(c));
-  const out = [], push = (nome, res, sit) => out.push({ nome, res, sit });
-  push('Linhas × colunas', rows.length.toLocaleString('pt-BR') + ' × ' + cab.length, 'baixo');
-  const chaves = new Set(); let dup = 0;
-  rows.forEach(r => { const k = (iMaq >= 0 && iTempo >= 0) ? r[iMaq] + '|' + r[iTempo] : r.join('|'); if(chaves.has(k)) dup++; else chaves.add(k); });
-  push('Linhas duplicadas', dup, dup ? (dup / rows.length > 0.02 ? 'alto' : 'medio') : 'baixo');
-  if(iTempo >= 0){
-    let gaps = 0, invalidas = 0; const por = {};
-    rows.forEach(r => { const t = Date.parse(String(r[iTempo]).replace(' ', 'T')); if(isNaN(t)) invalidas++; else (por[iMaq >= 0 ? r[iMaq] : '_'] = por[iMaq >= 0 ? r[iMaq] : '_'] || []).push(t); });
-    Object.values(por).forEach(v => { v.sort((a, b) => a - b); for(let i = 1; i < v.length; i++) if(v[i] - v[i - 1] > 1.5 * 3600e3) gaps++; });
-    push('Lacunas na série (> 1,5 h)', gaps, gaps ? (gaps > rows.length * 0.01 ? 'alto' : 'medio') : 'baixo');
-    push('Datas inválidas', invalidas, invalidas ? 'alto' : 'baixo');
-  } else push('Coluna de data/hora', 'não encontrada', 'medio');
-  cab.forEach((c, j) => {
-    if(j === iMaq || j === iTempo) return;
-    const vals = rows.map(r => r[j]), vazias = vals.filter(v => v === '' || v == null || /^(nan|null|na)$/i.test(v)).length;
-    const nums = vals.map(v => parseFloat(String(v).replace(',', '.'))).filter(v => isFinite(v));
-    if(nums.length < vals.length * 0.5){ push(c + ' · vazios', vazias, vazias ? 'medio' : 'baixo'); return; }
-    const mu = mediaDe(nums), sd = Math.sqrt(mediaDe(nums.map(v => (v - mu) ** 2)));
-    const neg = nums.filter(v => v < 0).length, outl = sd ? nums.filter(v => Math.abs(v - mu) > 6 * sd).length : 0;
-    push(c + ' · vazios / não numéricos', vals.length - nums.length, vals.length - nums.length ? 'medio' : 'baixo');
-    push(c + ' · valores negativos', neg, neg ? 'alto' : 'baixo');
-    push(c + ' · extremos (> 6 desvios)', outl, outl ? 'medio' : 'baixo');
-    push(c + ' · sensor parado', sd === 0 ? 'sim' : 'não', sd === 0 ? 'alto' : 'baixo');
-  });
-  return out;
-}
-document.getElementById('monArquivo').onchange = e => {
-  const f = e.target.files[0]; if(!f) return;
-  const info = document.getElementById('monArqInfo'), r = new FileReader();
-  r.onload = () => {
-    const res = monAnalisarCSV(String(r.result));
-    if(!res){ info.textContent = 'Arquivo vazio ou sem cabeçalho.'; return; }
-    const pior = res.some(x => x.sit === 'alto') ? 'precisa de correção' : res.some(x => x.sit === 'medio') ? 'tem pontos de atenção' : 'sem problemas encontrados';
-    info.textContent = f.name + ': ' + pior;
-    document.getElementById('monQualCaixa').hidden = false;
-    document.getElementById('monQual').innerHTML = res.map(x => `<tr><td>${esc(x.nome)}</td><td class="num">${esc(x.res)}</td><td><span class="selo ${x.sit}">${x.sit === 'baixo' ? 'OK' : x.sit === 'medio' ? 'Atenção' : 'Crítico'}</span></td></tr>`).join('');
-  };
-  r.onerror = () => { info.textContent = 'Não foi possível ler o arquivo.'; };
-  r.readAsText(f);
-};
 </script>
 </body>
 </html>
