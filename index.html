@@ -670,6 +670,7 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 .os-barra{display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:20px 0 12px}
 .os-barra .botao{padding:9px 16px}
 #abaOrdens tbody tr, #abaMonitor tbody tr{cursor:default}
+.os-aviso{margin-top:20px; padding:12px 16px; background:var(--sup2); border:1px solid var(--borda); border-left:4px solid var(--amarelo); border-radius:var(--raio); font-size:14px; line-height:1.5}
 .mon-aviso{display:flex; gap:10px; align-items:flex-start; padding:12px 16px; border-left:4px solid var(--medio); background:var(--sup2); margin-top:10px; font-size:14px}
 .mon-aviso.alto{border-color:var(--alto)} .mon-aviso.baixo{border-color:var(--baixo)}
 </style>
@@ -870,6 +871,10 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
   <section style="padding-top:40px">
     <h1>Ordens de serviço</h1>
     <p class="secundario" style="margin-top:8px">Transforme a lista de prioridade em trabalho: atribua um técnico e, depois da visita, confirme se houve troca da peça e se houve falha. Falha confirmada vai para a tabela de falhas; troca confirmada vai para a tabela de manutenção (troca sem falha = manutenção preventiva).</p>
+    <div class="os-aviso" role="note">
+      <b>Atenção: gravação protegida por senha.</b>
+      Ao clicar em <b>Confirmar</b>, o site pede a senha de acesso. Sem a senha correta, o servidor recusa a ordem e nada é gravado nas tabelas de falhas e manutenção. Não compartilhe a senha.
+    </div>
     <div class="kpis" id="osKpis"></div>
     <div class="os-barra">
       <button class="botao" id="osGerar" type="button">Gerar ordens do dia</button>
@@ -878,6 +883,8 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
           <option value="todas">todas</option><option value="abertas">abertas</option><option value="concluidas">concluídas</option>
         </select></label>
       <button class="botao" id="osExportar" type="button">Exportar feedback (CSV)</button>
+      <button class="botao" data-baixar="falhas" type="button" title="Baixa o falhas.parquet atualizado da AWS (pede a senha)">Baixar falhas (.parquet)</button>
+      <button class="botao" data-baixar="manutencao" type="button" title="Baixa o manutencao.parquet atualizado da AWS (pede a senha)">Baixar manutenção (.parquet)</button>
       <button class="botao" id="osLimpar" type="button">Limpar tudo</button>
       <span class="nota" id="osInfo" style="margin:0"></span>
     </div>
@@ -3781,8 +3788,8 @@ setTimeout(() => { try{ prepararAbertura(); setTimeout(prepararOutrosModelos, 60
    ORDENS DE SERVIÇO + MONITOR
    ========================================================= */
 const TECNICOS = ['T01','T02','T03','T04','T05','T06','T07','T08'];   // mesmos códigos das colunas tecnico_T01..T08 do parquet
-/* URL da rota POST /confirmar do API Gateway (cole aqui quando a API estiver pronta) */
-const API_URL = '';
+/* URL da Lambda Function URL (POST direto na raiz, sem /confirmar). A senha NÃO fica aqui: é digitada na confirmação. */
+const API_URL = 'https://omuy6q55w4qkjpvra4yi6mmudm0engev.lambda-url.us-east-2.on.aws/';
 /* Senha de acesso: digitada pelo usuário na 1ª confirmação (fica só na aba do navegador, nunca no código). Deve ser igual à variável CHAVE_ACESSO do Lambda. */
 function osChave(forcar){
   let k = forcar ? '' : (sessionStorage.getItem('chaveOS') || '');
@@ -3852,6 +3859,7 @@ async function osEnviar(o){
       troca:o.troca, falha:o.falha, tecnico:o.tecnico || '', fornecedor_peca:o.troca === 'sim' ? o.fornecedor : '',
       custo_troca_reais:o.troca === 'sim' ? +o.custo : null, data_hora:osISO(o) + 'T06:00:00' }) });
     if(r.status === 401){ sessionStorage.removeItem('chaveOS'); throw new Error('senha de acesso incorreta, tente de novo'); }
+    if(r.status === 403) throw new Error('a AWS bloqueou a chamada (confira a permissão pública da Function URL)');
     if(!r.ok) throw new Error('HTTP ' + r.status);
     o.enviado = true;
   }catch(e){ o.erro = String(e.message || e); }
@@ -3908,6 +3916,23 @@ document.getElementById('osCorpo').addEventListener('click', e => {
   if(!e.target.dataset.del) return;
   OS.lista = OS.lista.filter(x => x.id !== id); osSalvar(); desenharOrdens();
 });
+async function osBaixar(tabela){
+  const info = document.getElementById('osInfo');
+  if(!API_URL){ alert('A API ainda não foi configurada.'); return; }
+  const chave = osChave(false); if(!chave) return;
+  info.textContent = 'Preparando ' + tabela + '.parquet...';
+  try{
+    const r = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Chave':chave }, body: JSON.stringify({ acao:'baixar', tabela }) });
+    if(r.status === 401){ sessionStorage.removeItem('chaveOS'); throw new Error('senha de acesso incorreta, tente de novo'); }
+    if(r.status === 403) throw new Error('a AWS bloqueou a chamada (confira a permissão pública da Function URL)');
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !j.url) throw new Error(j.erro || ('HTTP ' + r.status));
+    const a = document.createElement('a'); a.href = j.url; a.download = tabela + '.parquet';
+    document.body.appendChild(a); a.click(); a.remove();
+    info.textContent = tabela + '.parquet: download iniciado';
+  }catch(e){ info.textContent = 'erro: ' + String(e.message || e); }
+}
+document.querySelectorAll('[data-baixar]').forEach(b => b.onclick = () => osBaixar(b.dataset.baixar));
 document.getElementById('osLimpar').onclick = () => { if(OS.lista.length && confirm('Apagar todas as ordens?')){ OS.lista = []; osSalvar(); desenharOrdens(); } };
 document.getElementById('osExportar').onclick = () => {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
