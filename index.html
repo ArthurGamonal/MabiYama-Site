@@ -705,7 +705,7 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
     <div class="chave" role="tablist">
       <button id="btSimples" class="ativo" role="tab">Falhas</button>
       <button id="btMaquinas" role="tab">Máquinas</button>
-      <button id="btOrdens" role="tab">Ordens</button>
+      <button id="btOrdens" role="tab">Agenda</button>
       <button id="btEconomia" role="tab">Economia</button>
       <button id="btTecnica" role="tab">Técnica</button>
     </div>
@@ -865,10 +865,10 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 </main>
 
 
-<!-- ===================== ABA ORDENS DE SERVIÇO ===================== -->
+<!-- ===================== ABA AGENDA ===================== -->
 <main id="abaOrdens" class="pagina" hidden>
   <section style="padding-top:40px">
-    <h1>Ordens de serviço</h1>
+    <h1>Agenda</h1>
     <div class="os-aviso" role="note">
       <b>Atenção: o site grava numa cópia dos arquivos parquet.</b>
       Envie <code>falhas.parquet</code> e <code>manutencao.parquet</code> uma vez. Cada ordem confirmada acrescenta a linha na cópia guardada <b>neste navegador</b>,
@@ -3739,7 +3739,7 @@ setTimeout(() => { try{ prepararAbertura(); setTimeout(prepararOutrosModelos, 60
 const TECNICOS = ['T01','T02','T03','T04','T05','T06','T07','T08'];   // mesmos códigos das colunas tecnico_T01..T08 do parquet
 /* =========================================================
    ARQUIVOS .parquet NO PRÓPRIO SITE (sem AWS)
-   O usuário envia falhas.parquet e manutencao.parquet (botões da aba Ordens de Serviço).
+   O usuário envia falhas.parquet e manutencao.parquet (botões da aba Agenda).
    O site guarda uma cópia de trabalho no navegador (IndexedDB). Cada ordem confirmada acrescenta a linha nessa
    cópia, depois de CONFERIR o resultado (colunas, tipos e linhas antigas idênticas). O botão "Baixar" entrega
    o arquivo atualizado para o usuário substituir o original.
