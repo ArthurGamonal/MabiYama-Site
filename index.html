@@ -663,7 +663,7 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 #abaEconomia .eco-peca dl{gap:10px; margin-top:20px}
 #abaEconomia .eco-peca .grande{margin-top:16px}
 
-/* ===== Ordens de serviço e Monitor ===== */
+/* ===== Ordens de serviço ===== */
 .os-campo{background:var(--sup); color:var(--tx); border:1px solid var(--borda-forte); border-radius:var(--raio); padding:6px 8px; font:inherit; font-size:13px; max-width:100%}
 .os-x{background:none; border:0; color:var(--tx3); cursor:pointer; font-size:16px}
 .os-x:hover{color:var(--alto)}
@@ -705,7 +705,7 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
     <div class="chave" role="tablist">
       <button id="btSimples" class="ativo" role="tab">Falhas</button>
       <button id="btMaquinas" role="tab">Máquinas</button>
-      <button id="btOrdens" role="tab">Agenda</button>
+      <button id="btOrdens" role="tab">Ordens</button>
       <button id="btEconomia" role="tab">Economia</button>
       <button id="btTecnica" role="tab">Técnica</button>
     </div>
@@ -868,11 +868,23 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 <!-- ===================== ABA ORDENS DE SERVIÇO ===================== -->
 <main id="abaOrdens" class="pagina" hidden>
   <section style="padding-top:40px">
-    <h1>Agenda</h1>
+    <h1>Ordens de serviço</h1>
     <div class="os-aviso" role="note">
-      <b>Atenção: gravação protegida por senha.</b>
-      Ao clicar em <b>Confirmar</b>, o site pede a senha de acesso. Sem a senha correta, o servidor recusa a ordem e nada é gravado nas tabelas de falhas e manutenção. Não compartilhe a senha.
-    </div>
+      <b>Atenção: o site grava numa cópia dos arquivos parquet.</b>
+      Envie <code>falhas.parquet</code> e <code>manutencao.parquet</code> uma vez. Cada ordem confirmada acrescenta a linha na cópia guardada <b>neste navegador</b>,
+      depois de conferir colunas, tipos e linhas antigas. Use <b>Baixar</b> para pegar o arquivo atualizado e substituir o original.
+      Se você limpar os dados do navegador a cópia se perde, então baixe com frequência. Para trabalhar em outro computador, envie os arquivos de novo.
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <label class="botao" style="cursor:pointer; display:inline-block">Enviar falhas.parquet<input type="file" accept=".parquet" data-arq="falhas" hidden></label>
+        <button class="botao" id="osBaixar_falhas" data-baixar-arq="falhas" type="button" disabled>Baixar falhas.parquet</button>
+        <span class="nota" id="osArq_falhas" style="margin:0"></span>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <label class="botao" style="cursor:pointer; display:inline-block">Enviar manutencao.parquet<input type="file" accept=".parquet" data-arq="manutencao" hidden></label>
+        <button class="botao" id="osBaixar_manutencao" data-baixar-arq="manutencao" type="button" disabled>Baixar manutencao.parquet</button>
+        <span class="nota" id="osArq_manutencao" style="margin:0"></span>
+      </div>
+      </div>
     <div class="kpis" id="osKpis"></div>
     <div class="os-barra">
       <button class="botao" id="osGerar" type="button">Gerar ordens do dia</button>
@@ -881,8 +893,6 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
           <option value="todas">todas</option><option value="abertas">abertas</option><option value="concluidas">concluídas</option>
         </select></label>
       <button class="botao" id="osExportar" type="button">Exportar feedback (CSV)</button>
-      <button class="botao" data-baixar="falhas" type="button" title="Baixa o falhas.parquet atualizado da AWS (pede a senha)">Baixar falhas (.parquet)</button>
-      <button class="botao" data-baixar="manutencao" type="button" title="Baixa o manutencao.parquet atualizado da AWS (pede a senha)">Baixar manutenção (.parquet)</button>
       <button class="botao" id="osLimpar" type="button">Limpar tudo</button>
       <span class="nota" id="osInfo" style="margin:0"></span>
     </div>
@@ -892,7 +902,7 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
         <tbody id="osCorpo"></tbody>
       </table>
     </div>
-    <p class="nota">Responda “Troca de peça” e “Falha” e clique em Confirmar: o registro é enviado à AWS (data = 06:00 do dia da previsão) e a ordem fica travada. Com troca de peça, técnico, fornecedor e custo são obrigatórios. Falha = Sim conta como alerta confirmado (verdadeiro positivo); Falha = Não conta como alarme falso. Troca = Sim e Falha = Não é manutenção preventiva e vai só para a tabela de manutenção.</p>
+    <p class="nota">Responda “Troca de peça” e “Falha” e clique em Confirmar: o registro é acrescentado ao arquivo parquet (data = 06:00 do dia da previsão) e a ordem fica travada. Com troca de peça, técnico, fornecedor e custo são obrigatórios. Falha = Sim conta como alerta confirmado (verdadeiro positivo); Falha = Não conta como alarme falso. Troca = Sim e Falha = Não é manutenção preventiva e vai só para a tabela de manutenção.</p>
   </section>
 </main>
 
@@ -959,9 +969,9 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
   <section class="secao">
     <h2>Volume de alertas por dia</h2>
     <div class="cartao" style="margin-top:16px;padding:16px">
-      <div id="graficoMonAlertas" class="grafico" style="height:260px"></div>
+      <div id="graficoVolAlertas" class="grafico" style="height:260px"></div>
     </div>
-    <p class="nota" id="monNotaVol"></p>
+    <p class="nota" id="volNota"></p>
   </section>
 
   <footer>Custos, IDs e histórico de trocas são reais (manutencao.csv). AP por peça e sensores são de exemplo; as probabilidades vêm do submission_v11a.csv (exportar_dados_site.py).</footer>
@@ -1572,7 +1582,7 @@ function desenharTecnica(){
   desenharTabela();
   desenharCalor();
   desenharDetalheTecnico();
-  desenharAlertasDia();
+  desenharVolumeAlertas();
 }
 
 /* =========================================================
@@ -3724,17 +3734,213 @@ setTimeout(() => { try{ prepararAbertura(); setTimeout(prepararOutrosModelos, 60
 
 <script>
 /* =========================================================
-   ORDENS DE SERVIÇO + MONITOR
+   ORDENS DE SERVIÇO
    ========================================================= */
 const TECNICOS = ['T01','T02','T03','T04','T05','T06','T07','T08'];   // mesmos códigos das colunas tecnico_T01..T08 do parquet
-/* URL da Lambda Function URL (POST direto na raiz, sem /confirmar). A senha NÃO fica aqui: é digitada na confirmação. */
-const API_URL = 'https://omuy6q55w4qkjpvra4yi6mmudm0engev.lambda-url.us-east-2.on.aws/';
-/* Senha de acesso: digitada pelo usuário na 1ª confirmação (fica só na aba do navegador, nunca no código). Deve ser igual à variável CHAVE_ACESSO do Lambda. */
-function osChave(forcar){
-  let k = forcar ? '' : (sessionStorage.getItem('chaveOS') || '');
-  if(!k){ k = prompt('Senha de acesso para confirmar ordens:') || ''; if(k) sessionStorage.setItem('chaveOS', k); }
-  return k;
+/* =========================================================
+   ARQUIVOS .parquet NO PRÓPRIO SITE (sem AWS)
+   O usuário envia falhas.parquet e manutencao.parquet (botões da aba Ordens de Serviço).
+   O site guarda uma cópia de trabalho no navegador (IndexedDB). Cada ordem confirmada acrescenta a linha nessa
+   cópia, depois de CONFERIR o resultado (colunas, tipos e linhas antigas idênticas). O botão "Baixar" entrega
+   o arquivo atualizado para o usuário substituir o original.
+   Bibliotecas (carregadas só quando necessário): hyparquet (leitura) e hyparquet-writer (escrita).
+   Dica: depois de testar, fixe uma versão em cada URL (ex.: https://esm.sh/hyparquet@1.x.y).
+   ========================================================= */
+const PQ_LIBS = {
+  leitor:   'https://esm.sh/hyparquet',
+  escritor: 'https://esm.sh/hyparquet-writer',
+  compress: 'https://esm.sh/hyparquet-compressors'
+};
+const PQ_ARQ = { falhas:'falhas.parquet', manutencao:'manutencao.parquet' };
+const PQ = { arq:{}, n:{}, sujo:{}, ocupado:false, libs:null };
+
+async function pqLibs(){
+  if(PQ.libs) return PQ.libs;
+  const [r, w, c] = await Promise.all([ import(PQ_LIBS.leitor), import(PQ_LIBS.escritor), import(PQ_LIBS.compress).catch(() => null) ]);
+  PQ.libs = { r, w, compressors: c && c.compressors };
+  return PQ.libs;
 }
+
+/* --- cópia de trabalho guardada no navegador --- */
+function pqBanco(){ return new Promise((ok, err) => { const q = indexedDB.open('osParquet', 1); q.onupgradeneeded = () => q.result.createObjectStore('h'); q.onsuccess = () => ok(q.result); q.onerror = () => err(q.error); }); }
+async function pqIdb(modo, k, v){
+  const db = await pqBanco();
+  return new Promise((ok, err) => {
+    const st = db.transaction('h', modo === 'put' ? 'readwrite' : 'readonly').objectStore('h');
+    const q = modo === 'put' ? st.put(v, k) : st.get(k);
+    q.onsuccess = () => ok(q.result); q.onerror = () => err(q.error);
+  });
+}
+async function pqPersistir(t){
+  try{ await pqIdb('put', t, { buf:PQ.arq[t], n:PQ.n[t], sujo:!!PQ.sujo[t] }); }
+  catch(e){ alert('Não consegui guardar a cópia de ' + PQ_ARQ[t] + ' no navegador. Baixe o arquivo agora para não perder as alterações.'); }
+}
+function pqStatus(){
+  Object.keys(PQ_ARQ).forEach(t => {
+    const el = document.getElementById('osArq_' + t), dl = document.getElementById('osBaixar_' + t);
+    const tem = !!PQ.arq[t];
+    el.textContent = tem ? PQ_ARQ[t] + ': ' + (PQ.n[t] != null ? PQ.n[t] : '?') + ' linhas' + (PQ.sujo[t] ? ' · com alterações, baixe o arquivo atualizado' : '') : PQ_ARQ[t] + ': ainda não enviado';
+    dl.disabled = !tem;
+  });
+}
+(async () => {
+  try{
+    for(const t of Object.keys(PQ_ARQ)){
+      const d = await pqIdb('get', t);
+      if(d && d.buf){ PQ.arq[t] = d.buf; PQ.n[t] = d.n; PQ.sujo[t] = !!d.sujo; }
+    }
+  }catch(_){}
+  pqStatus();
+})();
+document.querySelectorAll('[data-arq]').forEach(inp => inp.onchange = async () => {
+  const t = inp.dataset.arq, f = inp.files[0]; inp.value = '';
+  if(!f) return;
+  if(PQ.sujo[t] && !confirm('A cópia atual de ' + PQ_ARQ[t] + ' tem linhas novas que você ainda não baixou. Substituir pelo arquivo enviado?')) return;
+  try{
+    const buf = await f.arrayBuffer();
+    const { r } = await pqLibs();
+    const meta = r.parquetMetadata(buf);
+    const cols = pqColunas(meta);
+    if(!cols.some(c => c.nome === 'data_hora')) throw new Error('não achei a coluna data_hora; é o arquivo certo?');
+    PQ.arq[t] = buf; PQ.n[t] = Number(meta.num_rows); PQ.sujo[t] = false;
+    await pqPersistir(t);
+  }catch(e){ alert('Não consegui ler "' + f.name + '": ' + (e.message || e)); }
+  pqStatus();
+});
+function pqBaixar(t){
+  if(!PQ.arq[t]) return;
+  const url = URL.createObjectURL(new Blob([PQ.arq[t]], { type:'application/octet-stream' }));
+  const a = document.createElement('a'); a.href = url; a.download = PQ_ARQ[t];
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  PQ.sujo[t] = false; pqPersistir(t); pqStatus();
+}
+document.querySelectorAll('[data-baixar-arq]').forEach(b => b.onclick = () => pqBaixar(b.dataset.baixarArq));
+
+/* --- comparação de valores (Date, bigint, número, texto e nulo) --- */
+function pqNorm(v){
+  if(v === null || v === undefined) return 'null';
+  if(v instanceof Date) return 'D' + v.getTime();
+  if(typeof v === 'bigint') return 'N' + v.toString();
+  if(typeof v === 'number') return Number.isNaN(v) ? 'null' : 'N' + String(v);
+  return 'S' + String(v);
+}
+
+/* --- colunas e tipos do arquivo original --- */
+function pqColunas(meta){
+  const el = meta.schema.slice(1);
+  if(el.some(e => e.num_children)) throw new Error('a tabela tem colunas aninhadas, que o site não sabe gravar');
+  return el.map(e => ({ nome:e.name, tipo:e.type, conv:e.converted_type, logico:e.logical_type, obrig:e.repetition_type === 'REQUIRED' }));
+}
+function pqTipoJs(c){
+  const L = c.logico && c.logico.type;
+  if(L === 'TIMESTAMP' || L === 'DATE' || c.conv === 'TIMESTAMP_MILLIS' || c.conv === 'TIMESTAMP_MICROS' || c.conv === 'DATE' || c.tipo === 'INT96') return 'data';
+  if(c.tipo === 'BYTE_ARRAY') return 'texto';
+  if(c.tipo === 'INT32' || c.tipo === 'INT64') return 'inteiro';
+  if(c.tipo === 'FLOAT' || c.tipo === 'DOUBLE') return 'decimal';
+  if(c.tipo === 'BOOLEAN') return 'booleano';
+  return 'outro';
+}
+function pqValor(c, v){
+  const t = pqTipoJs(c);
+  const vazio = v === null || v === undefined || v === '' || (typeof v === 'number' && Number.isNaN(v));
+  if(vazio){ if(c.obrig) throw new Error('a coluna "' + c.nome + '" é obrigatória e ficou sem valor'); return null; }
+  if(t === 'data'){
+    if(v instanceof Date) return v;
+    const txt = String(v);
+    return new Date(txt.length <= 10 ? txt + 'T06:00:00Z' : (/[zZ]|[+-]\d\d:?\d\d$/.test(txt) ? txt : txt + 'Z'));   // horário "de parede", sem fuso
+  }
+  if(t === 'inteiro'){
+    const n = typeof v === 'string' ? parseInt(v.replace(/\D/g, ''), 10) : Math.round(+v);   // "M007" -> 7
+    if(!Number.isFinite(n)) throw new Error('valor inválido para a coluna "' + c.nome + '"');
+    return c.tipo === 'INT64' ? BigInt(n) : n;
+  }
+  if(t === 'decimal'){ const n = +v; if(!Number.isFinite(n)) throw new Error('valor inválido para a coluna "' + c.nome + '"'); return n; }
+  if(t === 'booleano') return !!v;
+  return String(v);
+}
+/* mesma regra do antigo Lambda: cada tabela usa só as colunas que ela realmente tem */
+function pqLinhaBruta(o){
+  const troca = o.troca === 'sim';
+  const l = {
+    data_hora: osISO(o) + 'T06:00:00',
+    id_maquina: MAQUINAS[o.m - 1].nome,
+    peca: 'peca_' + o.peca,
+    fornecedor_peca: troca ? o.fornecedor : null,
+    custo_troca_reais: troca ? +o.custo : null,
+    duracao_min: null,
+    lote_peca: null
+  };
+  ['A', 'B', 'C', 'D'].forEach(x => { l['peca_' + x] = x === o.peca ? 1 : 0; });
+  TECNICOS.forEach(t => { l['tecnico_' + t] = t === o.tecnico ? 1 : 0; });
+  return l;
+}
+
+/* --- leitura / conferência / gravação --- */
+async function pqLer(tabela){
+  const buf = PQ.arq[tabela];
+  if(!buf) throw new Error('envie o arquivo ' + PQ_ARQ[tabela] + ' (botões no topo desta aba) antes de confirmar');
+  const { r, compressors } = await pqLibs();
+  const meta = r.parquetMetadata(buf);
+  const linhas = await r.parquetReadObjects({ file:buf, compressors });
+  return { buf, meta, linhas };
+}
+async function pqVerificar(buf, meta0, esperadas, cols){
+  const { r, compressors } = await pqLibs();
+  const meta = r.parquetMetadata(buf);
+  const lidas = await r.parquetReadObjects({ file:buf, compressors });
+  if(lidas.length !== esperadas.length) return 'número de linhas diferente (' + lidas.length + ' em vez de ' + esperadas.length + ')';
+  const a = meta0.schema.slice(1), b = meta.schema.slice(1);
+  if(a.length !== b.length) return 'número de colunas diferente';
+  const sig = e => JSON.stringify([e.type, e.converted_type || null, e.logical_type || null], (k, v) => typeof v === 'bigint' ? v.toString() : v);
+  for(let i = 0; i < a.length; i++){
+    if(a[i].name !== b[i].name) return 'nome/ordem de coluna diferente em "' + a[i].name + '"';
+    if(sig(a[i]) !== sig(b[i])) return 'o tipo da coluna "' + a[i].name + '" mudou';
+  }
+  for(let i = 0; i < esperadas.length; i++) for(const c of cols){
+    if(pqNorm(lidas[i][c.nome]) !== pqNorm(esperadas[i][c.nome])) return 'valor diferente na linha ' + (i + 1) + ', coluna "' + c.nome + '"';
+  }
+  return '';
+}
+async function pqCodificar(meta, cols, todas){
+  const { w } = await pqLibs();
+  const dados = c => todas.map(l => l[c.nome] === undefined ? null : l[c.nome]);
+  const tentativas = [
+    { rotulo:'schema original', args:{ columnData: cols.map(c => ({ name:c.nome, data:dados(c) })), schema: meta.schema, kvMetadata: meta.key_value_metadata } },
+    { rotulo:'tipos explícitos', args:{ columnData: cols.map(c => { const d = { name:c.nome, data:dados(c) }; if(['INT32', 'INT64', 'FLOAT', 'DOUBLE', 'BOOLEAN'].includes(c.tipo)) d.type = c.tipo; return d; }) } }
+  ];
+  const falhas = [];
+  for(const t of tentativas){
+    try{
+      let b = await w.parquetWriteBuffer(t.args);
+      if(!(b instanceof ArrayBuffer)) b = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+      const erro = await pqVerificar(b, meta, todas, cols);
+      if(!erro) return b;
+      falhas.push(t.rotulo + ': ' + erro);
+    }catch(e){ falhas.push(t.rotulo + ': ' + (e.message || e)); }
+  }
+  throw new Error('não consegui gerar um parquet idêntico ao original, por isso nada foi alterado (' + falhas.join(' | ') + ')');
+}
+/* devolve 'gravado' ou 'duplicado' (a cópia só é trocada depois que pqCodificar conferiu o resultado) */
+async function pqGravar(tabela, o){
+  const { meta, linhas } = await pqLer(tabela);
+  const cols = pqColunas(meta);
+  const bruta = pqLinhaBruta(o), nova = {};
+  cols.forEach(c => {
+    if(/^__index_level_\d+__$/.test(c.nome)){            // índice do pandas gravado como coluna: continua a sequência
+      const mx = linhas.reduce((m, l) => Math.max(m, Number(l[c.nome]) || 0), -1) + 1;
+      nova[c.nome] = c.tipo === 'INT64' ? BigInt(mx) : mx;
+    } else nova[c.nome] = pqValor(c, bruta[c.nome]);
+  });
+  const chave = ['data_hora', 'id_maquina', 'peca', 'peca_A', 'peca_B', 'peca_C', 'peca_D'].filter(n => cols.some(c => c.nome === n));
+  if(chave.length && linhas.some(l => chave.every(n => pqNorm(l[n]) === pqNorm(nova[n])))) return 'duplicado';
+  const todas = linhas.concat([nova]);
+  const novo = await pqCodificar(meta, cols, todas);
+  PQ.arq[tabela] = novo; PQ.n[tabela] = todas.length; PQ.sujo[tabela] = true;
+  await pqPersistir(tabela); pqStatus();
+  return 'gravado';
+}
+
 const SN = { sim:'Sim', nao:'Não' };
 const OS = { lista:[], prox:1 };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -3780,7 +3986,7 @@ function osSelect(o, campo){
     + Object.keys(SN).map(k => `<option value="${k}"${k === v ? ' selected' : ''}>${SN[k]}</option>`).join('') + `</select>`;
 }
 function osConfirmacao(o){
-  if(o.enviado) return '<span class="nota" style="margin:0">✓ enviado</span>';
+  if(o.enviado) return '<span class="nota" style="margin:0">✓ gravado</span>';
   if(o.enviando) return '<span class="nota" style="margin:0">enviando…</span>';
   if(!osPronta(o)) return '<span class="nota" style="margin:0">responda troca e falha</span>';
   const tipo = o.falha === 'sim' ? (o.troca === 'sim' ? 'falha + troca' : 'falha sem troca') : (o.troca === 'sim' ? 'preventiva' : 'alarme falso');
@@ -3788,21 +3994,27 @@ function osConfirmacao(o){
     + (o.erro ? `<div class="nota" style="margin:4px 0 0;color:var(--alto-tx)">erro: ${esc(o.erro)}</div>` : '');
 }
 async function osEnviar(o){
-  if(!API_URL){ alert('A API ainda não foi configurada. Cole a URL do API Gateway na constante API_URL do código.'); return; }
+  if(PQ.ocupado){ alert('Aguarde: outra ordem está sendo gravada.'); return; }
+  const faltam = [o.falha === 'sim' && 'falhas', o.troca === 'sim' && 'manutencao'].filter(t => t && !PQ.arq[t]);
+  if(faltam.length){ alert('Envie ' + faltam.map(t => PQ_ARQ[t]).join(' e ') + ' (botões no topo desta aba) antes de confirmar.'); return; }
   if(!osISO(o)){ alert('Não consegui determinar a data da previsão desta ordem. Exclua e gere a ordem de novo.'); return; }
-  const chave = osChave(false); if(!chave) return;
-  o.enviando = true; o.erro = ''; desenharOrdens();
+  if(o.troca === 'sim'){
+    const falta = !TECNICOS.includes(o.tecnico) ? 'atribua um técnico (T01 a T08)' : !FORNECEDORES.includes(o.fornecedor) ? 'escolha o fornecedor da peça' : !(+o.custo > 0) ? 'informe o custo da troca (maior que zero)' : '';
+    if(falta){ o.erro = falta; desenharOrdens(); return; }
+  }
+  PQ.ocupado = true; o.enviando = true; o.erro = ''; desenharOrdens();
+  const feitos = [];
   try{
-    const r = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Chave':chave }, body: JSON.stringify({
-      os:o.id, maquina:o.m, maquina_nome:MAQUINAS[o.m - 1].nome, peca:o.peca, prob:o.prob, previsao_para:o.data,
-      troca:o.troca, falha:o.falha, tecnico:o.tecnico || '', fornecedor_peca:o.troca === 'sim' ? o.fornecedor : '',
-      custo_troca_reais:o.troca === 'sim' ? +o.custo : null, data_hora:osISO(o) + 'T06:00:00' }) });
-    if(r.status === 401){ sessionStorage.removeItem('chaveOS'); throw new Error('senha de acesso incorreta, tente de novo'); }
-    if(r.status === 403) throw new Error('a AWS bloqueou a chamada (confira a permissão pública da Function URL)');
-    if(!r.ok) throw new Error('HTTP ' + r.status);
+    if(o.falha === 'sim') feitos.push('falhas: ' + await pqGravar('falhas', o));
+    if(o.troca === 'sim') feitos.push('manutenção: ' + await pqGravar('manutencao', o));
     o.enviado = true;
-  }catch(e){ o.erro = String(e.message || e); }
-  o.enviando = false; osSalvar(); desenharOrdens();
+    document.getElementById('osInfo').textContent = feitos.length ? 'ordem #' + o.id + ' → ' + feitos.join(' · ') + ' — baixe o arquivo atualizado' : 'ordem #' + o.id + ': alarme falso, nada a gravar';
+  }catch(e){
+    o.erro = (feitos.length ? 'já gravado — ' + feitos.join(', ') + '. ' : '') + String(e.message || e);
+  }
+  PQ.ocupado = false; o.enviando = false; osSalvar();
+  const info = document.getElementById('osInfo').textContent; desenharOrdens();
+  if(o.enviado) document.getElementById('osInfo').textContent = info;
 }
 
 function desenharOrdens(){
@@ -3855,23 +4067,6 @@ document.getElementById('osCorpo').addEventListener('click', e => {
   if(!e.target.dataset.del) return;
   OS.lista = OS.lista.filter(x => x.id !== id); osSalvar(); desenharOrdens();
 });
-async function osBaixar(tabela){
-  const info = document.getElementById('osInfo');
-  if(!API_URL){ alert('A API ainda não foi configurada.'); return; }
-  const chave = osChave(false); if(!chave) return;
-  info.textContent = 'Preparando ' + tabela + '.parquet...';
-  try{
-    const r = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Chave':chave }, body: JSON.stringify({ acao:'baixar', tabela }) });
-    if(r.status === 401){ sessionStorage.removeItem('chaveOS'); throw new Error('senha de acesso incorreta, tente de novo'); }
-    if(r.status === 403) throw new Error('a AWS bloqueou a chamada (confira a permissão pública da Function URL)');
-    const j = await r.json().catch(() => ({}));
-    if(!r.ok || !j.url) throw new Error(j.erro || ('HTTP ' + r.status));
-    const a = document.createElement('a'); a.href = j.url; a.download = tabela + '.parquet';
-    document.body.appendChild(a); a.click(); a.remove();
-    info.textContent = tabela + '.parquet: download iniciado';
-  }catch(e){ info.textContent = 'erro: ' + String(e.message || e); }
-}
-document.querySelectorAll('[data-baixar]').forEach(b => b.onclick = () => osBaixar(b.dataset.baixar));
 document.getElementById('osLimpar').onclick = () => { if(OS.lista.length && confirm('Apagar todas as ordens?')){ OS.lista = []; osSalvar(); desenharOrdens(); } };
 document.getElementById('osExportar').onclick = () => {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
@@ -3882,7 +4077,7 @@ document.getElementById('osExportar').onclick = () => {
   a.download = 'feedback_tecnicos.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
-/* ---------- Volume de alertas por dia (aba Técnica) ---------- */
+/* ---------- Volume de alertas por dia (final da aba Técnica) ---------- */
 const MON = { alto:null, medio:null };
 function monContagem(){
   if(MON.alto) return;
@@ -3896,13 +4091,11 @@ function monContagem(){
     MON.alto.push(a); MON.medio.push(m);
   }
 }
-const mediaDe = v => v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
-
-function desenharAlertasDia(){
+function desenharVolumeAlertas(){
   monContagem();
   const d = estado.dia;
-  document.getElementById('monNotaVol').textContent = 'Alertas = pares máquina × peça com risco ≥ ' + fmtPct(LIMITE_MEDIO) + ' (Possível) ou ≥ ' + fmtPct(LIMITE_ALTO) + ' (Muito provável). A linha tracejada marca o dia escolhido no topo. A AP vem da validação do modelo; a precisão observada vem do retorno dos técnicos.';
-  const g = graficos.monAlertas = graficos.monAlertas || echarts.init(document.getElementById('graficoMonAlertas'));
+  document.getElementById('volNota').textContent = 'Alertas = pares máquina × peça com risco ≥ ' + fmtPct(LIMITE_MEDIO) + ' (Possível) ou ≥ ' + fmtPct(LIMITE_ALTO) + ' (Muito provável). A linha tracejada marca o dia escolhido no topo.';
+  const g = graficos.volAlertas = graficos.volAlertas || echarts.init(document.getElementById('graficoVolAlertas'));
   const dias = MON.alto.map((_, i) => fmtData(dataDoDia(i)));
   const eixo = { axisLabel:{ color:cor('--tx3') }, axisLine:{ lineStyle:{ color:cor('--borda-forte') } } };
   g.setOption({
