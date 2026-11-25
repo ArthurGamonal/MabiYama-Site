@@ -4200,15 +4200,7 @@ document.getElementById('arqPrev').onchange = e => {
     aplicarPrevisao(res.prob, res.inicio, res.dias, f.name);
     try{ localStorage.setItem('previsaoCarregada', JSON.stringify({ nome:f.name, inicio:isoLocal(res.inicio), dias:res.dias, prob:res.prob })); }
     catch(err){ prevToast('Previsão carregada, mas não coube na memória do navegador: ao recarregar a página será preciso enviar de novo.', 'aviso'); return; }
-    const s = res.resumo, av = [];
-    if(s.maqs < N_MAQUINAS) av.push(`${N_MAQUINAS - s.maqs} máquina(s) sem dados`);
-    if(s.faltando > 0) av.push(`${s.faltando} combinações máquina×dia faltando (probabilidade 0)`);
-    if(s.cortados) av.push(`${s.cortados} valores acima de 1 limitados a 100%`);
-    if(s.invalidos) av.push(`${s.invalidos} valores inválidos tratados como 0`);
-    if(s.fora) av.push(`${s.fora} linhas de máquinas fora de M001–M${String(N_MAQUINAS).padStart(3, '0')} ignoradas`);
-    if(s.ruins) av.push(`${s.ruins} linhas com id fora do padrão ignoradas`);
-    if(s.dup) av.push(`${s.dup} linhas repetidas (valeu a última)`);
-    prevToast(`Previsão carregada: ${s.linhas.toLocaleString('pt-BR')} linhas, ${res.dias} dias.` + (av.length ? ' Atenção: ' + av.join('; ') + '.' : ''), av.length ? 'aviso' : '');
+    prevToast('Upload realizado com sucesso.');
   };
   r.readAsText(f);
 };
