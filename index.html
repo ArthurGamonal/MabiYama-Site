@@ -697,6 +697,8 @@ body[data-tema="claro"]{ --dest:#e6a800; --dest-tx:#b57d00; }
 .qr-et{border:1px dashed #888; padding:8px; text-align:center; font:600 14px sans-serif; break-inside:avoid}
 .qr-et img{width:100%; image-rendering:pixelated}
 .qr-et svg{width:100%; height:auto; display:block}
+/* acesso por QR (sem senha): só a aba Campo */
+body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display:none !important}
 /* celular: cabeçalho compacto, abas rolando de lado, alvos de toque grandes */
 @media (max-width:640px){
   .topo .pagina{padding-left:14px; padding-right:14px; padding-top:8px; padding-bottom:8px; gap:8px}
@@ -1663,6 +1665,7 @@ function desenharTecnica(){
    8. TROCA DE ABA E ATUALIZAÇÃO GERAL
    ========================================================= */
 function mostrarAba(aba){
+  if(document.body.classList.contains('so-campo')) aba = 'campo';   // acesso por QR: só a aba Campo
   estado.aba = aba;
   if(aba !== 'campo' && typeof campoParar === 'function') campoParar();
   try{ localStorage.setItem('aba', aba); }catch(e){}
@@ -3190,6 +3193,7 @@ function montarControlesMaquinas(){
 /* Celular (ou link ?modo=campo / ?m=M051 do QR): abre direto na aba Campo. Para ver o painel completo no celular: ?modo=gestor */
 const PARAMS_URL = new URLSearchParams(location.search);
 const MODO_CELULAR = PARAMS_URL.get('modo') !== 'gestor' && (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (window.matchMedia && matchMedia('(pointer:coarse)').matches && Math.min(screen.width, innerWidth) <= 820));
+const ACESSO_QR = /^M\d{3}$/i.test(PARAMS_URL.get('m') || '') && +PARAMS_URL.get('m').slice(1) >= 1 && +PARAMS_URL.get('m').slice(1) <= 92;      // link do QR da bomba: entra sem senha (só no Campo)
 const ABRIR_CAMPO = MODO_CELULAR || PARAMS_URL.get('modo') === 'campo' || /^M\d{3}$/i.test(PARAMS_URL.get('m') || '');
 const LOGIN_USUARIO = 'mabiyama';
 const LOGIN_HASH = '5ec554d93252fd2ab3267fce1e764e3db043664adcf279f8fec97f82e6cbd55c';   // sha256 da senha
@@ -3217,7 +3221,8 @@ function montarLogin(){
     const u = document.getElementById('lgUsuario').value.trim().toLowerCase();
     const senha = document.getElementById('lgSenha').value;
     if(u === LOGIN_USUARIO && sha256(senha) === LOGIN_HASH){
-      try{ sessionStorage.setItem('mabiyama_sessao', '1'); }catch(err){}
+      try{ sessionStorage.setItem('mabiyama_sessao', '1'); sessionStorage.removeItem('mabiyama_qr'); }catch(err){}
+      document.body.classList.remove('so-campo');
       document.getElementById('lgErro').textContent = '';
       liberarSite();
     } else {
@@ -3227,12 +3232,17 @@ function montarLogin(){
     }
   }
   document.getElementById('btSair').onclick = () => {
-    try{ sessionStorage.removeItem('mabiyama_sessao'); }catch(err){}
+    try{ sessionStorage.removeItem('mabiyama_sessao'); sessionStorage.removeItem('mabiyama_qr'); }catch(err){}
     location.reload();
   };
-  let logado = false;
-  try{ logado = sessionStorage.getItem('mabiyama_sessao') === '1'; }catch(err){}
+  let logado = false, viaQR = false;
+  try{ logado = sessionStorage.getItem('mabiyama_sessao') === '1'; viaQR = sessionStorage.getItem('mabiyama_qr') === '1'; }catch(err){}
   if(logado) liberarSite();
+  else if(ACESSO_QR || viaQR){                         // entrou pelo QR da bomba: dispensa a senha, mas só vê a aba Campo
+    document.body.classList.add('so-campo');
+    try{ sessionStorage.setItem('mabiyama_qr', '1'); }catch(err){}
+    liberarSite();
+  }
   else document.getElementById('lgUsuario').focus();
 }
 
