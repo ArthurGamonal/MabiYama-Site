@@ -742,6 +742,21 @@ body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display
 .cr-cam{position:relative; width:100%; aspect-ratio:1/1; background:#000; overflow:hidden; border:1px solid var(--borda-forte)}
 .cr-cam video{width:100%; height:100%; object-fit:cover; display:block}
 .cr-mira{position:absolute; inset:18%; border:3px solid rgba(255,255,255,.85); box-shadow:0 0 0 999px rgba(0,0,0,.35); pointer-events:none}
+#abaTreino .treino-card{max-width:840px;margin:24px auto;padding:clamp(18px,4vw,34px);border:1px solid var(--borda);border-radius:var(--raio);background:var(--sup)}
+#abaTreino h2{margin:0 0 10px}
+#abaTreino p{font-size:1rem}
+#treinoArquivos{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px;margin:22px 0}
+#treinoArquivos label{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid var(--borda);border-radius:var(--raio);font-weight:600}
+#treinoArquivos input{max-width:100%;font:inherit;font-size:.875rem}
+.treino-acoes{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.treino-acoes a{color:var(--tx);text-decoration:underline;text-underline-offset:3px}
+.treino-acoes button:disabled{opacity:.55;cursor:wait}
+#treinoStatus{min-height:1.5em;margin:16px 0 8px}
+#treinoStatus.erro{color:var(--alto)}
+#treinoEtapas{margin:8px 0 0;padding-left:24px;color:var(--tx3);line-height:1.8}
+#treinoEtapas .corrente{color:var(--tx);font-weight:700}
+#treinoEtapas .concluida{color:var(--baixo)}
+body[data-aba="treino"] .cal-caixa{display:none}
 </style>
 </head>
 
@@ -781,6 +796,7 @@ body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display
       <button id="btCampo" role="tab">Campo</button>
       <button id="btEconomia" role="tab">Economia</button>
       <button id="btTecnica" role="tab">Técnica</button>
+      <button id="btTreino" type="button" role="tab" aria-controls="abaTreino" aria-selected="false">Treinamento</button>
     </div>
     <button class="icone-bt" id="btTema" title="Alternar modo claro/escuro" aria-label="Alternar modo claro/escuro"></button>
     <button class="icone-bt" id="btSair" title="Sair">Sair</button>
@@ -792,6 +808,37 @@ body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display
   <div class="aviso-icone" aria-hidden="true">✓</div>
   <h2 id="avisoSemDiaTitulo">Nada previsto para falhar neste dia</h2>
   <p id="avisoSemDiaTexto"></p>
+</main>
+
+<main id="abaTreino" class="pagina" role="tabpanel" aria-labelledby="btTreino" hidden>
+  <section class="treino-card">
+    <h2>Treinar e atualizar previsões</h2>
+    <p>Selecione os seis CSVs da mesma frota. Ao concluir o treinamento, o painel carrega a nova previsão automaticamente.</p>
+    <form id="treinoForm">
+      <div id="treinoArquivos">
+        <label>Telemetria<input type="file" name="telemetria" accept=".csv,text/csv" required></label>
+        <label>Máquinas<input type="file" name="maquinas" accept=".csv,text/csv" required></label>
+        <label>Operação<input type="file" name="operacao" accept=".csv,text/csv" required></label>
+        <label>Falhas<input type="file" name="falhas" accept=".csv,text/csv" required></label>
+        <label>Manutenção<input type="file" name="manutencao" accept=".csv,text/csv" required></label>
+        <label>Erros<input type="file" name="erros" accept=".csv,text/csv" required></label>
+      </div>
+      <div class="treino-acoes">
+        <button class="botao" type="submit" id="treinoEnviar">Enviar e treinar</button>
+        <button class="botao" type="button" id="treinoVer" hidden>Ver previsões</button>
+        <a id="treinoBaixar" href="/api/treinamento/submission.csv" download hidden>Baixar submission.csv</a>
+      </div>
+    </form>
+    <p id="treinoStatus" role="status" aria-live="polite"></p>
+    <ol id="treinoEtapas">
+      <li>Tratar os CSVs</li>
+      <li>Unificar as tabelas com zinal</li>
+      <li>Criar a base2</li>
+      <li>Gerar as variáveis do modelo</li>
+      <li>Treinar o modelo e gerar a submission</li>
+      <li>Atualizar o painel</li>
+    </ol>
+  </section>
 </main>
 
 <!-- ===================== ABA SIMPLES (principal) ===================== -->
@@ -939,7 +986,7 @@ body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display
     <p class="nota">Conta: falhas esperadas no mês = soma das probabilidades diárias de todas as máquinas. A chance de o estoque bastar usa a distribuição de Poisson. Trocas do calendário de visitas não estão nessa conta.</p>
   </section>
 
-  <footer>Custos, falhas e IDs das peças são reais (manutencao.csv e falhas.csv); o custo esperado e o estoque usam as probabilidades do submission_v11a.csv.</footer>
+  <footer>Custos, falhas e IDs das peças são reais (manutencao.csv e falhas.csv); o custo esperado e o estoque usam as probabilidades da previsão ativa.</footer>
 </main>
 
 
@@ -1062,7 +1109,7 @@ body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display
     <p class="nota" id="volNota"></p>
   </section>
 
-  <footer>Custos, IDs e histórico de trocas são reais (manutencao.csv). AP por peça é de exemplo; as probabilidades vêm do submission_v11a.csv (exportar_dados_site.py).</footer>
+  <footer>Custos, IDs e histórico de trocas são reais (manutencao.csv). AP por peça é de exemplo; as probabilidades vêm da previsão ativa.</footer>
 </main>
 
 
@@ -1071,7 +1118,7 @@ body.so-campo .chave, body.so-campo #btCarregar, body.so-campo [data-qr]{display
    1. CONFIGURAÇÃO
    ========================================================= */
 const PECAS = ['A','B','C','D'];
-const N_MAQUINAS = 92;
+let N_MAQUINAS = 92;
 let INICIO = new Date(2023, 8, 30);   // 30/09/2023 (mês começa em 0)
 let N_DIAS = 92;                       // até 30/12/2023
 const LIMITE_ALTO = 0.70;                // provisório
@@ -1128,13 +1175,20 @@ const CUSTO = (() => {
 const fmtR = (v, casas = 0) => v.toLocaleString('pt-BR', { style:'currency', currency:'BRL', minimumFractionDigits:casas, maximumFractionDigits:casas });
 
 // peça instalada na máquina m (peça p) no dia d = a última troca registrada até esse dia
+let manutencaoTreinada = null;
+function trocasDaPeca(m, p){
+  const fonte = manutencaoTreinada || MANUT;
+  return fonte[m]?.[p] || [];
+}
+function fornecedorDaTroca(t){ return typeof t[2] === 'number' ? FORNECEDORES[t[2]] : t[2]; }
+function tecnicoDaTroca(t){ return typeof t[3] === 'number' ? 'T' + String(t[3]).padStart(2, '0') : t[3]; }
 function pecaInstalada(m, p, d){
-  const lista = (MANUT[m] && MANUT[m][p]) || [];
+  const lista = trocasDaPeca(m, p);
   let ult = null, n = 0, acum = 0;
   for(const t of lista){ if(t[0] > d) break; ult = t; n++; acum += t[5]; }
   if(!ult) return null;
   return {
-    dia:ult[0], lote:ult[1], fornecedor:FORNECEDORES[ult[2]], tecnico:'T' + String(ult[3]).padStart(2, '0'),
+    dia:ult[0], lote:ult[1], fornecedor:fornecedorDaTroca(ult), tecnico:tecnicoDaTroca(ult),
     duracao:ult[4], custo:ult[5], trocas:n, custoAcum:acum,
     visitas:Math.max(1, Math.round((d + 1 - ult[0]) / 15)),
   };
@@ -1149,6 +1203,9 @@ for(let m = 1; m <= N_MAQUINAS; m++){
   // ⚠️ PROVISÓRIO: os arquivos que recebi não dizem o modelo de cada bomba. Trocar pelo modelo real (cadastro / maquinas.json).
   MAQUINAS.push({ id:m, nome:'M' + String(m).padStart(3,'0'), modelo:'modelo ' + 'ABCD'[(m - 1) % 4], fase:FASES[m - 1] });
 }
+
+const FROTA_PADRAO = MAQUINAS.slice();
+const nomeBomba = m => MAQUINAS[m - 1]?.nome || String(m);
 
 // a máquina m é visitada no dia d? SIM se, na previsão da véspera (d-1), alguma peça tem probabilidade ≥ LIMITE_MEDIO (30%).
 // (regra por risco: substitui o antigo calendário fixo de 15 dias; sem previsão para o dia = sem visita)
@@ -1411,10 +1468,10 @@ function desenharSimples(){
     el.innerHTML = `
       <div class="faixa" style="background:${corNivel(l.prob)}"></div>
       <div>
-        <h3>Bomba ${l.m.id}: ${nv.acao.toLowerCase()} ${l.peca}</h3>
+        <h3>Bomba ${l.m.nome}: ${nv.acao.toLowerCase()} ${l.peca}</h3>
                 ${(() => { const inst = pecaInstalada(l.m.id, l.peca, d); return `<div class="id-peca">
-          <span class="chip">ID ${inst ? inst.lote : 'original'}</span>
-          ${inst ? `<span>${inst.fornecedor}</span><span>instalada em ${fmtDataLonga(inst.dia)}</span>` : ''}
+          <span class="chip">ID ${inst ? esc(inst.lote) : 'original'}</span>
+          ${inst ? `<span>${esc(inst.fornecedor)}</span><span>instalada em ${fmtDataLonga(inst.dia)}</span>` : ''}
           <span>troca custa ~${fmtR(CUSTO[l.peca].media)}</span></div>`; })()}
         ${outras.length ? `<p class="secundario" style="margin-top:6px">Aproveite e olhe também a peça ${outras.join(' e ')}.</p>` : ''}
       </div>
@@ -1432,7 +1489,7 @@ function desenharSimples(){
   const cx = document.getElementById('custoAmanha');
   const trocas = [];
   atencao.forEach(l => [l.peca, ...PECAS.filter(p => p !== l.peca && l.prev[p].prob >= LIMITE_MEDIO)]
-    .forEach(p => trocas.push({ bomba:l.m.id, peca:p, custo:CUSTO[p].media })));
+    .forEach(p => trocas.push({ bomba:l.m.nome, peca:p, custo:CUSTO[p].media })));
   cx.hidden = !trocas.length;
   if(trocas.length){
     const soma = trocas.reduce((t, x) => t + x.custo, 0);
@@ -1509,11 +1566,11 @@ function linhasTecnicas(){
   const d = estado.dia;
   const soVis = document.getElementById('soVisitadas').checked;
   const modelo = document.getElementById('filtroModelo').value;
-  const busca = document.getElementById('busca').value.trim();
+  const busca = document.getElementById('busca').value.trim().toUpperCase();
   return MAQUINAS
     .filter(m => !soVis || visitada(m.id, d + 1))
     .filter(m => !modelo || m.modelo === modelo)
-    .filter(m => !busca || String(m.id).includes(busca))
+    .filter(m => !busca || m.nome.includes(busca))
     .map(m => {
       const prev = prever(m.id, d);
       const p = piorPeca(prev);
@@ -1554,7 +1611,7 @@ function desenharTabela(){
       <td>${l.visita ? '<span style="color:var(--azul)">●</span> sim' : '<span class="secundario">não</span>'}</td>
       ${celP(l.A)}${celP(l.B)}${celP(l.C)}${celP(l.D)}
       <td class="num">${fmtProb(l.max)} <span class="secundario">${l.pecaMax}</span></td>
-      <td class="num">${l.lote}</td>
+      <td class="num">${esc(l.lote)}</td>
       <td class="num">${fmtR(l.custoEsp)}</td>
       <td class="num">${l.desvio > 0 ? '+' : ''}${l.desvio}%</td>
       <td class="num">${l.visitas}</td>
@@ -1580,7 +1637,7 @@ function desenharCalor(){
   graficos.calor.setOption({
     grid:{ left:30, right:10, top:10, bottom:50 },
     tooltip:{ formatter:x => `${MAQUINAS[x.value[0]].nome} · peça ${PECAS[x.value[1]]}<br>P = ${fmtProb(x.value[2])}${visitada(MAQUINAS[x.value[0]].id, d + 1) ? ' · visitada no dia' : ''}` },
-    xAxis:{ type:'category', data:MAQUINAS.map(m => m.id), axisLabel:{ color:TEMA.tx3, interval:4, fontFamily:'Poppins' }, axisLine:{ lineStyle:{ color:TEMA.bordaForte } }, splitArea:{ show:false } },
+    xAxis:{ type:'category', data:MAQUINAS.map(m => m.nome), axisLabel:{ color:TEMA.tx3, interval:4, fontFamily:'Poppins' }, axisLine:{ lineStyle:{ color:TEMA.bordaForte } }, splitArea:{ show:false } },
     yAxis:{ type:'category', data:PECAS, axisLabel:{ color:TEMA.tx2, fontFamily:'Poppins' }, axisLine:{ show:false } },
     visualMap:{
       type:'piecewise', orient:'horizontal', left:'center', bottom:0, textStyle:{ color:TEMA.tx2 },
@@ -1631,17 +1688,17 @@ function desenharDetalheTecnico(){
     <div><span>Δ sensor ${lig.sensor} (48 h)</span><b>${info.desvio > 0 ? '+' : ''}${info.desvio}%</b></div>
     <div><span>visitas desde a troca</span><b>${info.visitas}</b></div>
     <div><span>última troca · falhas ant.</span><b>${info.corretiva ? 'corretiva' : 'preventiva'} · ${info.falhas}</b></div>
-    <div><span>ID da peça (lote)</span><b>${inst ? inst.lote : 'original'}</b></div>
-    <div><span>fornecedor · técnico</span><b>${inst ? inst.fornecedor + ' · ' + inst.tecnico : '—'}</b></div>
+    <div><span>ID da peça (lote)</span><b>${inst ? esc(inst.lote) : 'original'}</b></div>
+    <div><span>fornecedor · técnico</span><b>${inst ? esc(inst.fornecedor) + ' · ' + esc(inst.tecnico) : '—'}</b></div>
     <div><span>instalada em</span><b>${inst ? fmtDataLonga(inst.dia) : '—'}</b></div>
     <div><span>custo da troca (médio)</span><b>${fmtR(CUSTO[peca].media, 2)}</b></div>`;
 
   // histórico real de trocas desta peça nesta máquina
-  const hist = ((MANUT[m] && MANUT[m][peca]) || []).filter(t => t[0] <= d).slice().reverse();
+  const hist = trocasDaPeca(m, peca).filter(t => t[0] <= d).slice().reverse();
   document.getElementById('rotuloHist').textContent = `histórico de trocas · ${MAQUINAS[m - 1].nome} · peça ${peca} · ${hist.length} trocas · ${fmtR(hist.reduce((s, t) => s + t[5], 0))}`;
   document.getElementById('histTrocas').innerHTML = hist.map(t => `<tr>
-      <td class="num">${fmtDataLonga(t[0])}</td><td class="num">${t[1]}</td><td>${FORNECEDORES[t[2]]}</td>
-      <td class="num tec">T${String(t[3]).padStart(2, '0')}</td><td class="num">${t[4]} min</td><td class="num">${fmtR(t[5], 2)}</td></tr>`).join('');
+      <td class="num">${fmtDataLonga(t[0])}</td><td class="num">${esc(t[1])}</td><td>${esc(fornecedorDaTroca(t))}</td>
+      <td class="num tec">${esc(tecnicoDaTroca(t))}</td><td class="num">${t[4] ?? "—"}${t[4] == null ? "" : " min"}</td><td class="num">${t[5] == null ? "—" : fmtR(t[5], 2)}</td></tr>`).join('');
 
   // gráfico dos 4 sensores, destacando o da peça
   const serie = sensores(m, d);
@@ -1667,8 +1724,10 @@ function desenharDetalheTecnico(){
 
 function montarControlesTecnicos(){
   const selModelo = document.getElementById('filtroModelo');
+  selModelo.length = 1;
   [...new Set(MAQUINAS.map(m => m.modelo))].sort().forEach(md => selModelo.add(new Option(md, md)));
   const selMaq = document.getElementById('seletorMaquina');
+  selMaq.length = 0;
   MAQUINAS.forEach(m => selMaq.add(new Option(m.nome, m.id)));
   selMaq.onchange = () => { estado.maquina = +selMaq.value; estado.peca = null; desenharDetalheTecnico(); desenharTabela(); };
   ['soVisitadas', 'filtroModelo'].forEach(id => document.getElementById(id).onchange = desenharTabela);
@@ -1703,17 +1762,23 @@ function mostrarAba(aba){
   document.getElementById('btOrdens').classList.toggle('ativo', aba === 'ordens');
   document.getElementById('btCampo').classList.toggle('ativo', aba === 'campo');
   document.getElementById('btTecnica').classList.toggle('ativo', aba === 'tecnica');
+  document.getElementById('btTreino').classList.toggle('ativo', aba === 'treino');
+  document.querySelectorAll('.chave [role="tab"]').forEach(bt =>
+    bt.setAttribute('aria-selected', String(bt.classList.contains('ativo'))));
   atualizar();
 }
 
 function atualizar(){
   atualizarCalendarioBt();
   // dia sem nenhuma visita: não há o que desenhar em nenhuma aba, só avisa que nada está previsto para falhar
-  const semVisita = visitasAmanha(estado.dia) === 0;
+  const treino = estado.aba === 'treino';
+  document.getElementById('abaTreino').hidden = !treino;
+  const semVisita = visitasAmanha(estado.dia) === 0 && !(manutencaoTreinada && ['maquinas', 'tecnica', 'economia'].includes(estado.aba));
   estado.semVisita = semVisita;
   const ABAS = { simples:'abaSimples', maquinas:'abaMaquinas', economia:'abaEconomia', ordens:'abaOrdens', campo:'abaCampo', tecnica:'abaTecnica' };
   Object.keys(ABAS).forEach(k => { document.getElementById(ABAS[k]).hidden = semVisita || estado.aba !== k; });
-  document.getElementById('avisoSemDia').hidden = !semVisita;
+  document.getElementById('avisoSemDia').hidden = treino || !semVisita;
+  if(treino) return;
   if(semVisita){
     const dt = dataDoDia(estado.dia + 1);
     document.getElementById('avisoSemDiaTexto').textContent =
@@ -1731,6 +1796,7 @@ function atualizar(){
   Object.values(graficos).forEach(g => g.resize());
 }
 
+document.getElementById('btTreino').onclick = () => mostrarAba('treino');
 document.getElementById('btSimples').onclick = () => mostrarAba('simples');
 document.getElementById('btTecnica').onclick = () => mostrarAba('tecnica');
 document.getElementById('btMaquinas').onclick = () => mostrarAba('maquinas');
@@ -2555,7 +2621,7 @@ function atualizarTextoIntro(A){
     document.getElementById('introSub').textContent = `${visitadas} bombas recebem visita em ${fmtData(dataDoDia(estado.dia + 1))}`;
   } else {
     const inst = pecaInstalada(RX.m, p, estado.dia);
-    document.getElementById('introSobr').textContent = `bomba ${RX.m} · ${MAQUINAS[RX.m - 1].modelo} · peça ${p} · ID ${inst ? inst.lote : 'original'}`;
+    document.getElementById('introSobr').textContent = `bomba ${nomeBomba(RX.m)} · ${MAQUINAS[RX.m - 1].modelo} · peça ${p} · ID ${inst ? inst.lote : 'original'}`;
     digitar(document.getElementById('introTitulo'), `${nivel(info.prob).nome}: peça ${p} com defeito`);
     document.getElementById('introSub').textContent = sensorDesviando(info)
       ? `O sensor ${lig.sensor} está ${lig.dir > 0 ? 'subindo' : 'caindo'} há 2 dias (${info.desvio}% fora do normal).`
@@ -2656,7 +2722,7 @@ function atualizarTextoRaioX(){
   desenharLinhaProducao();
   const prev = prever(RX.m, estado.dia), p = RX.sel, info = prev[p], lig = SENSOR_DA_PECA[p];
   const nv = nivel(info.prob);
-  document.getElementById('rxTitulo').textContent = `Bomba ${RX.m} · peça ${p}`;
+  document.getElementById('rxTitulo').textContent = `Bomba ${nomeBomba(RX.m)} · peça ${p}`;
   let txt;
   if(sensorDesviando(info))
     txt = `${info.prob >= LIMITE_MEDIO ? nv.nome : 'Tranquila por enquanto, mas vale acompanhar'}. O sensor ${lig.sensor}, colado nesta peça, está ${lig.dir > 0 ? 'subindo' : 'caindo'} há cerca de 2 dias (${info.desvio}% fora do normal).`;
@@ -2670,8 +2736,8 @@ function atualizarTextoRaioX(){
   // ficha da peça instalada (dados reais de manutencao.csv)
   const inst = pecaInstalada(RX.m, p, estado.dia);
   document.getElementById('rxFicha').innerHTML = inst ? `
-    <div><span>ID da peça</span><b class="mono">${inst.lote}</b></div>
-    <div><span>fornecedor</span><b>${inst.fornecedor}</b></div>
+    <div><span>ID da peça</span><b class="mono">${esc(inst.lote)}</b></div>
+    <div><span>fornecedor</span><b>${esc(inst.fornecedor)}</b></div>
     <div><span>instalada em</span><b>${fmtDataLonga(inst.dia)} · há ${inst.visitas} ${inst.visitas === 1 ? 'visita' : 'visitas'}</b></div>
     <div><span>custo da troca</span><b>~${fmtR(CUSTO[p].media)}</b></div>`
     : `<div style="grid-column:1/-1"><span>ID da peça</span><b>peça original (sem troca registrada)</b></div>`;
@@ -2695,7 +2761,7 @@ function montarResumoPecas(){
       return `<div class="rx-peca ${RX.sel === p ? 'sel' : ''}" data-p="${p}">
         <span class="pnome">peça ${p}</span>
         <span class="pnum" style="color:${nv.cls === 'baixo' ? 'var(--tx)' : `var(--${nv.cls}-tx)`}"><small>${nv.nome.toLowerCase()}</small>${fmtPct(prev[p].prob)}</span>
-        <span class="pmeta">ID <span class="mono">${inst ? inst.lote : 'original'}</span>${inst ? ` · ${inst.fornecedor} · instalada ${fmtDataLonga(inst.dia)} (${inst.trocas} trocas)` : ''} · troca ~${fmtR(CUSTO[p].media)}</span>
+        <span class="pmeta">ID <span class="mono">${inst ? esc(inst.lote) : 'original'}</span>${inst ? ` · ${esc(inst.fornecedor)} · instalada ${fmtDataLonga(inst.dia)} (${inst.trocas} trocas)` : ''} · troca ~${fmtR(CUSTO[p].media)}</span>
         <span class="pbarra"><i style="width:${Math.max(1, prev[p].prob * 100).toFixed(0)}%;background:${corNivel(prev[p].prob)}"></i></span>
       </div>`;
     }).join('');
@@ -3165,7 +3231,7 @@ function desenharMaquinas(){
     return { m, prev, peca:p, prob:prev[p].prob, custo:custoEsperado(prev), visita:proximaVisita(m.id, d) };
   });
   // buscando um número, a busca vale para qualquer bomba (ignora o filtro de visitadas)
-  if(busca) lista = lista.filter(x => String(x.m.id).includes(busca));
+  if(busca) lista = lista.filter(x => x.m.nome.includes(busca.toUpperCase()));
   else if(so) lista = lista.filter(x => x.visita === d + 1);
   const crit = { risco:(a, b) => b.prob - a.prob, custo:(a, b) => b.custo - a.custo, numero:(a, b) => a.m.id - b.m.id, visita:(a, b) => (a.visita === null) - (b.visita === null) || b.prob - a.prob };
   lista.sort(crit[ordem]);
@@ -3175,7 +3241,7 @@ function desenharMaquinas(){
     const nv = nivel(x.prob), inst = pecaInstalada(x.m.id, x.peca, d);
     const amanha = x.visita === d + 1;
     return `<button class="maq" data-m="${x.m.id}">
-      <div class="maq-topo"><span class="maq-nome">Bomba ${x.m.id} <small class="maq-modelo">${x.m.modelo}</small></span><span class="selo ${nv.cls}">${nv.nome}</span></div>
+      <div class="maq-topo"><span class="maq-nome">Bomba ${x.m.nome} <small class="maq-modelo">${x.m.modelo}</small></span><span class="selo ${nv.cls}">${nv.nome}</span></div>
       <div class="maq-pecas">${PECAS.map(p => `
         <div class="mp"><span>peça ${p}</span>
           <div class="mp-trilho"><i style="width:${Math.max(2, x.prev[p].prob * 100).toFixed(0)}%;background:${corNivel(x.prev[p].prob)}"></i></div>
@@ -3183,7 +3249,7 @@ function desenharMaquinas(){
       </div>
       <div class="maq-rodape">
         <span>${amanha ? '<span class="ponto-visita"></span>visita no dia' : 'sem visita no dia'}</span>
-        <span class="chip" title="ID da peça ${x.peca}">${x.peca} · ${inst ? inst.lote : 'original'}</span>
+        <span class="chip" title="ID da peça ${x.peca}">${x.peca} · ${inst ? esc(inst.lote) : 'original'}</span>
       </div>
     </button>`;
   }).join('');
@@ -3203,7 +3269,7 @@ function montarSeletorRaioX(){
   const sel = document.getElementById('rxSeletor'), d = estado.dia;
   sel.innerHTML = MAQUINAS.map(m => {
     const pr = prever(m.id, d), nv = nivel(pr[piorPeca(pr)].prob);
-    return `<option value="${m.id}">Bomba ${m.id} · ${nv.nome.toLowerCase()}${visitada(m.id, d + 1) ? ' · visita no dia' : ''}</option>`;
+    return `<option value="${m.id}">Bomba ${m.nome} · ${nv.nome.toLowerCase()}${visitada(m.id, d + 1) ? ' · visita no dia' : ''}</option>`;
   }).join('');
   if(RX.m) sel.value = RX.m;
 }
@@ -4076,7 +4142,7 @@ async function pqGravar(tabela, o){
 
 const SN = { sim:'Sim', nao:'Não' };
 const OS = { lista:[], prox:1 };
-const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const osCustoOk = o => o.custo !== '' && o.custo != null && isFinite(+o.custo) && +o.custo > 0;
 const osPronta = o => !!o.troca && !!o.falha &&                 // as duas perguntas respondidas
   (o.troca !== 'sim' || (!!o.tecnico && FORNECEDORES.includes(o.fornecedor) && osCustoOk(o)));
@@ -4084,8 +4150,12 @@ const osAberta = o => !o.enviado;                              // só fecha depo
 const osConfirma = o => !!o.enviado && o.falha === 'sim';       // alerta confirmado (falha real)
 const osFalsa = o => !!o.enviado && o.falha === 'nao';          // alarme falso
 
+function chaveOrdens(){
+  return manutencaoTreinada ? 'ordensServico:' + MAQUINAS.map(m => m.nome).join(',') : 'ordensServico';
+}
 function osCarregar(){
-  try{ const j = JSON.parse(localStorage.getItem('ordensServico') || '[]'); if(Array.isArray(j)) OS.lista = j; }catch(e){}
+  OS.lista = [];
+  try{ const j = JSON.parse(localStorage.getItem(chaveOrdens()) || '[]'); if(Array.isArray(j)) OS.lista = j; }catch(e){}
   // ordens salvas no formato antigo (campo status) são convertidas e marcadas como já tratadas
   OS.lista.forEach(o => {
     if('status' in o){
@@ -4096,7 +4166,7 @@ function osCarregar(){
   });
   OS.prox = OS.lista.reduce((a, o) => Math.max(a, o.id), 0) + 1;
 }
-function osSalvar(){ try{ localStorage.setItem('ordensServico', JSON.stringify(OS.lista)); }catch(e){} }
+function osSalvar(){ try{ localStorage.setItem(chaveOrdens(), JSON.stringify(OS.lista)); }catch(e){} }
 osCarregar();
 
 function osStats(){
@@ -4250,7 +4320,7 @@ function desenharVolumeAlertas(){
 /* =========================================================
    UPLOAD DA PREVISÃO (CSV: id = M001_AAAA-MM-DD, peca_A..peca_D)
    ========================================================= */
-function lerPrevisaoCSV(texto, nMaq, pecas){
+function lerPrevisaoCSV(texto, nMaq, pecas, posicoes){
   const linhas = texto.replace(/^\ufeff/, '').split(/\r?\n/).filter(l => l.trim());
   if(linhas.length < 2) throw new Error('O arquivo está vazio ou só tem o cabeçalho.');
   const sep = (linhas[0].match(/;/g) || []).length > (linhas[0].match(/,/g) || []).length ? ';' : ',';
@@ -4262,7 +4332,7 @@ function lerPrevisaoCSV(texto, nMaq, pecas){
   for(let i = 1; i < linhas.length; i++){
     const c = linhas[i].split(sep), m = /^M?(\d+)_(\d{4})-(\d{2})-(\d{2})$/i.exec(limpa(c[iId] || ''));
     if(!m){ ruins++; continue; }
-    const maq = +m[1]; if(maq < 1 || maq > nMaq){ fora++; continue; }
+    const maq = posicoes ? posicoes.get('M' + m[1]) : +m[1]; if(!maq || maq < 1 || maq > nMaq){ fora++; continue; }
     const v = iP.map(j => {
       let x = parseFloat(String(c[j] == null ? '' : limpa(c[j])).replace(',', '.'));
       if(!isFinite(x) || x < 0){ invalidos++; return 0; }
@@ -4272,7 +4342,8 @@ function lerPrevisaoCSV(texto, nMaq, pecas){
     reg.push({ maq, t:Date.UTC(+m[2], +m[3] - 1, +m[4]), v });
   }
   if(!reg.length) throw new Error('Nenhuma linha válida. O id deve ter o formato M001_2023-09-30.');
-  const t0 = Math.min(...reg.map(r => r.t)), t1 = Math.max(...reg.map(r => r.t));
+  let t0 = reg[0].t, t1 = t0;
+  for(const { t } of reg){ t0 = Math.min(t0, t); t1 = Math.max(t1, t); }
   const dias = Math.round((t1 - t0) / 864e5) + 1;
   if(dias < 20) throw new Error('A previsão precisa cobrir pelo menos 20 dias (o arquivo tem ' + dias + ').');
   if(dias > 366) throw new Error('A previsão pode cobrir no máximo 366 dias (o arquivo tem ' + dias + ').');
@@ -4307,8 +4378,43 @@ function aplicarPrevisao(prob, inicio, dias, nome){
   delete es.dataset.manual;
   const fmt = d => d.toLocaleDateString('pt-BR');
   document.getElementById('prevFonte').textContent = nome ? `previsão: ${nome} · ${fmt(dataDoDia(0))} a ${fmt(dataDoDia(N_DIAS - 1))}` : 'previsão padrão (submission_v11a)';
+  document.getElementById('prevFonte').hidden = !nome;
   document.getElementById('btPrevPadrao').hidden = !nome;
   atualizar();
+}
+
+let idTreinoAtivo = null;
+function usarFrota(maquinas, manutencao){
+  const chaveAnterior = chaveOrdens();
+  MAQUINAS.splice(0, MAQUINAS.length, ...maquinas);
+  N_MAQUINAS = MAQUINAS.length;
+  manutencaoTreinada = manutencao;
+  document.getElementById('maqSoVisitadas').checked = !manutencao;
+  document.getElementById('soVisitadas').checked = !manutencao;
+  if(chaveAnterior !== chaveOrdens()){
+    osCarregar();
+    campoParar();
+    Object.assign(CAMPO, {sel:null, ok:null, ordem:null, via:''});
+  }
+  montarControlesTecnicos();
+}
+function ignorarTreino(){
+  if(idTreinoAtivo) {
+    try{ localStorage.setItem('treinoIgnorado', idTreinoAtivo); }catch(e){}
+    idTreinoAtivo = null;
+    document.getElementById('treinoVer').hidden = true;
+    usarFrota(FROTA_PADRAO, null);
+  }
+}
+function aplicarTreino(dados){
+  const maquinas = dados.maquinas.map((m, i) => ({ ...m, id:i + 1 }));
+  const posicoes = new Map(maquinas.map(m => [m.nome, m.id]));
+  const res = lerPrevisaoCSV(dados.csv, maquinas.length, PECAS, posicoes);
+  if(res.resumo.faltando || res.resumo.fora || res.resumo.ruins || res.resumo.dup || res.resumo.invalidos || res.resumo.cortados)
+    throw new Error('A submission gerada tem linhas ausentes ou inválidas.');
+  usarFrota(maquinas, dados.manutencao);
+  idTreinoAtivo = dados.id;
+  aplicarPrevisao(res.prob, res.inicio, res.dias, 'treinamento · submission.csv');
 }
 
 document.getElementById('btCarregar').onclick = () => document.getElementById('arqPrev').click();
@@ -4318,8 +4424,9 @@ document.getElementById('arqPrev').onchange = e => {
   r.onerror = () => prevToast('Não foi possível ler o arquivo.', 'erro');
   r.onload = () => {
     let res;
-    try{ res = lerPrevisaoCSV(String(r.result), N_MAQUINAS, PECAS); }
+    try{ res = lerPrevisaoCSV(String(r.result), FROTA_PADRAO.length, PECAS); }
     catch(err){ prevToast('Previsão não carregada: ' + err.message, 'erro'); return; }
+    ignorarTreino();
     aplicarPrevisao(res.prob, res.inicio, res.dias, f.name);
     try{ localStorage.setItem('previsaoCarregada', JSON.stringify({ nome:f.name, inicio:isoLocal(res.inicio), dias:res.dias, prob:res.prob })); }
     catch(err){ prevToast('Previsão carregada, mas não coube na memória do navegador: ao recarregar a página será preciso enviar de novo.', 'aviso'); return; }
@@ -4328,6 +4435,7 @@ document.getElementById('arqPrev').onchange = e => {
   r.readAsText(f);
 };
 document.getElementById('btPrevPadrao').onclick = () => {
+  ignorarTreino();
   try{ localStorage.removeItem('previsaoCarregada'); }catch(e){}
   aplicarPrevisao(PADRAO.prob, new Date(PADRAO.inicio), PADRAO.dias, null);
   prevToast('Previsão padrão restaurada.');
@@ -4364,11 +4472,15 @@ const campoChave = o => (o.inesperada ? 'i' + o.criado : osISO(o)) + '|' + o.m +
 /* ---- dados de cadastro (maquinas.csv): [linha, modelo, nº de série, observação] ----
    ⚠️ O CSV não tem coluna de posição física. A "ordem na linha" abaixo segue a ordem do cadastro (ID) dentro de cada linha. */
 const CAMPO_MAQ = {"M001":["L4","A","FBM-77302",""],"M002":["L3","A","FBM-50217",""],"M003":["L3","C","MTF-56778",""],"M004":["L1","B","IDT-66191",""],"M005":["L2","B","IDT-88666","vazamento de oleo corrigido"],"M006":["L3","C","MTF-89673",""],"M007":["L3","C","MTF-28743","aguardando recalibracao"],"M008":["L5","B","IDT-81599","reposicionada no layout em 2020"],"M009":["L1","C","MTF-94594","ruido no motor relatado pelo operador"],"M010":["L1","C","MTF-68181","ruido no motor relatado pelo operador"],"M011":["L3","B","IDT-68772","aguardando recalibracao"],"M012":["L2","B","IDT-51806","ruido no motor relatado pelo operador"],"M013":["L5","C","MTF-66666","reposicionada no layout em 2020"],"M014":["L5","A","FBM-66769","pintura da carenagem descascada"],"M015":["L6","B","IDT-44610","reposicionada no layout em 2020"],"M016":["L1","D","VTX-51146",""],"M017":["L3","B","IDT-39174",""],"M018":["L3","B","IDT-99330","aguardando recalibracao"],"M019":["L3","B","IDT-25567","ruido no motor relatado pelo operador"],"M020":["L5","B","IDT-86730","ruido no motor relatado pelo operador"],"M021":["L6","C","MTF-22981",""],"M022":["L6","B","IDT-14541","pintura da carenagem descascada"],"M023":["L6","D","VTX-60954",""],"M024":["L6","D","VTX-49325","vazamento de oleo corrigido"],"M025":["L2","A","FBM-87226",""],"M026":["L5","C","MTF-49352","painel substituido em 2021"],"M027":["L2","C","MTF-73055","pintura da carenagem descascada"],"M028":["L6","B","IDT-53806","painel substituido em 2021"],"M029":["L4","B","IDT-54427","ruido no motor relatado pelo operador"],"M030":["L4","D","VTX-44583","ruido no motor relatado pelo operador"],"M031":["L1","B","IDT-63737","aguardando recalibracao"],"M032":["L5","B","IDT-61633","aguardando recalibracao"],"M033":["L5","D","VTX-21112","reposicionada no layout em 2020"],"M034":["L5","C","MTF-46370","manual extraviado"],"M035":["L1","A","FBM-35616","vazamento de oleo corrigido"],"M036":["L3","D","VTX-60722","aguardando recalibracao"],"M037":["L3","D","VTX-23982","vazamento de oleo corrigido"],"M038":["L2","A","FBM-82021","ruido no motor relatado pelo operador"],"M039":["L3","B","IDT-66117",""],"M040":["L1","A","FBM-80833",""],"M041":["L3","B","IDT-43239","painel substituido em 2021"],"M042":["L2","A","FBM-81057","vazamento de oleo corrigido"],"M043":["L5","B","IDT-80404","vazamento de oleo corrigido"],"M044":["L2","C","MTF-70613","painel substituido em 2021"],"M045":["L5","C","MTF-97090",""],"M046":["L2","C","MTF-20082",""],"M047":["L4","D","VTX-88712",""],"M048":["L6","A","FBM-57498",""],"M049":["L3","D","VTX-72163",""],"M050":["L5","C","MTF-60351",""],"M051":["L6","D","VTX-31206","ruido no motor relatado pelo operador"],"M052":["L2","D","VTX-46750",""],"M053":["L6","B","IDT-19475","ruido no motor relatado pelo operador"],"M054":["L1","B","IDT-38965",""],"M055":["L6","C","MTF-65143","reposicionada no layout em 2020"],"M056":["L4","A","FBM-66878","reposicionada no layout em 2020"],"M057":["L4","B","IDT-87180",""],"M058":["L2","C","MTF-98239",""],"M059":["L1","B","IDT-28227","vazamento de oleo corrigido"],"M060":["L1","B","IDT-47808","vazamento de oleo corrigido"],"M061":["L3","A","FBM-42671",""],"M062":["L1","A","FBM-25349",""],"M063":["L3","C","MTF-61853",""],"M064":["L1","C","MTF-44978","reposicionada no layout em 2020"],"M065":["L1","C","MTF-52652","aguardando recalibracao"],"M066":["L5","C","MTF-11242",""],"M067":["L3","A","FBM-69285",""],"M068":["L4","D","VTX-18167","manual extraviado"],"M069":["L1","C","MTF-64453","vazamento de oleo corrigido"],"M070":["L4","C","MTF-51800","pintura da carenagem descascada"],"M071":["L1","A","FBM-19612","pintura da carenagem descascada"],"M072":["L6","D","VTX-80716",""],"M073":["L5","C","MTF-49393","pintura da carenagem descascada"],"M074":["L3","C","MTF-13536",""],"M075":["L2","C","MTF-95830","vazamento de oleo corrigido"],"M076":["L1","C","MTF-17006",""],"M077":["L6","D","VTX-72546","painel substituido em 2021"],"M078":["L6","B","IDT-80937","pintura da carenagem descascada"],"M079":["L6","B","IDT-29668","manual extraviado"],"M080":["L1","B","IDT-23994","vazamento de oleo corrigido"],"M081":["L6","B","IDT-40865","aguardando recalibracao"],"M082":["L2","B","IDT-39505",""],"M083":["L4","D","VTX-54064","vazamento de oleo corrigido"],"M084":["L1","B","IDT-58269",""],"M085":["L4","A","FBM-78874","aguardando recalibracao"],"M086":["L5","B","IDT-15873",""],"M087":["L4","C","MTF-56360","painel substituido em 2021"],"M088":["L6","C","MTF-57572","manual extraviado"],"M089":["L5","B","IDT-52452","vazamento de oleo corrigido"],"M090":["L5","A","FBM-19803",""],"M091":["L4","C","MTF-39751",""],"M092":["L3","B","IDT-18832","reposicionada no layout em 2020"]};
-const CAMPO_LINHAS = (() => { const L = {}; MAQUINAS.forEach(m => { const d = CAMPO_MAQ[m.nome]; if(d) (L[d[0]] = L[d[0]] || []).push(m.id); }); return L; })();
 // onde cada peça fica no conjunto (eixo: sucção → carcaça[A] → C → mancal[B] → D → motor)
 const CAMPO_LOCAL = { A:'dentro da carcaça, logo depois da sucção', C:'entre a carcaça e o mancal', B:'dentro do mancal', D:'entre o mancal e o motor, junto ao motor' };
 
-const campoDados = m => CAMPO_MAQ[MAQUINAS[m - 1].nome] || ['—', '—', '—', ''];
+const campoDados = m => {
+  const mq = MAQUINAS[m - 1];
+  if(manutencaoTreinada) return [mq.linha || '—', mq.modelo.slice(-1), mq.serie || '—', mq.observacoes || ''];
+  return CAMPO_MAQ[mq.nome] || ['—', '—', '—', ''];
+};
+const campoLinha = linha => linha === '—' ? [] : MAQUINAS.filter(m => campoDados(m.id)[0] === linha).map(m => m.id);
 function campoRisco(m){
   try{ const pv = prever(m, estado.dia), p = piorPeca(pv); return { p, prob:pv[p].prob, pv }; }
   catch(e){ return { p:'A', prob:0, pv:null }; }
@@ -4399,7 +4511,7 @@ function qrSvg(nome){
 
 /* ---------- desenhos ---------- */
 function campoSvgLinha(m, prob){
-  const linha = campoDados(m)[0], ids = CAMPO_LINHAS[linha] || [m], n = ids.length, W = 340, passo = W / n, l = passo - 4;
+  const linha = campoDados(m)[0], ids = (campoLinha(linha).length ? campoLinha(linha) : [m]), n = ids.length, W = 340, passo = W / n, l = passo - 4;
   const idx = ids.indexOf(m), hoje = new Set(campoVisitasDia().map(v => v.m));
   const cel = ids.map((id, i) => {
     const x = (i * passo + 2).toFixed(1), alvo = id === m;
@@ -4447,7 +4559,7 @@ function campoRoteiro(){
     <button class="campo-bt prim" data-scan="1">${CAMPO_ICO_QR}Escanear QR da máquina</button>`;
   if(!tec) h += '<p class="nota">Escolha acima quem você é (T01 a T08) para ver quais ordens são suas.</p>';
   h += vis.map(v => {
-    const d = campoDados(v.m), n = nivel(v.prob), ids = CAMPO_LINHAS[d[0]] || [], ord = abertas.find(o => o.m === v.m && o.tecnico === tec), livre = abertas.some(o => o.m === v.m && !o.tecnico);
+    const d = campoDados(v.m), n = nivel(v.prob), ids = campoLinha(d[0]), ord = abertas.find(o => o.m === v.m && o.tecnico === tec), livre = abertas.some(o => o.m === v.m && !o.tecnico);
     const tag = ord ? '<span class="cr-tag meu">sua ordem</span>' : livre ? '<span class="cr-tag">sem técnico</span>' : '';
     return `<div class="campo-card cr-item" data-m="${v.m}" role="button" tabindex="0" style="border-left:5px solid ${corNivel(v.prob)}">
       <div><b>${esc(MAQUINAS[v.m - 1].nome)} · linha ${esc(d[0].slice(1))}</b> ${tag}
@@ -4467,7 +4579,7 @@ function campoRoteiro(){
 
 /* ---------- 2. máquina: onde fica e qual peça pode ter falhado ---------- */
 function campoMaquina(m){
-  const mq = MAQUINAS[m - 1], d = campoDados(m), r = campoRisco(m), n = nivel(r.prob), ids = CAMPO_LINHAS[d[0]] || [m], i = ids.indexOf(m);
+  const mq = MAQUINAS[m - 1], d = campoDados(m), r = campoRisco(m), n = nivel(r.prob), ids = (campoLinha(d[0]).length ? campoLinha(d[0]) : [m]), i = ids.indexOf(m);
   const viz = [ids[i - 1], ids[i + 1]].filter(Boolean).map(id => MAQUINAS[id - 1].nome);
   const ord = campoOrdemAberta(m), alerta = r.prob >= LIMITE_MEDIO;
   let h = `<button class="campo-bt mini" data-voltar="1">← Voltar</button>
@@ -4707,5 +4819,6 @@ if(!document.body.classList.contains('bloqueado') && ABRIR_CAMPO){        // já
   try{ const at = document.querySelector('.chave .ativo'); at && at.scrollIntoView({ inline:'center', block:'nearest' }); }catch(e){}
 }
 </script>
+<script src="./treinamento.js"></script>
 </body>
 </html>
