@@ -62,6 +62,19 @@ def limpa_erros(caminho_csv):
     df["id_maquina"] = df["id_maquina"].str.strip().str.upper()
     df = df[df["versao_firmware"] != "v2.0.7"]
     df = df[df["id_maquina"].notna() & (df["id_maquina"] != "")]
+
+    # O NB26 usa o código e a severidade de cada evento separadamente.
+    df["codigo_erro"] = (
+        df[[f"codigo_{c}" for c in codigos_validos]]
+        .dot(range(1, len(codigos_validos) + 1))
+        .map(dict(enumerate(codigos_validos, 1)))
+    )
+    severidades = ["baixa", "media", "alta"]
+    df["severidade"] = (
+        df[[f"severidade_{s}" for s in severidades]]
+        .dot(range(1, len(severidades) + 1))
+        .map(dict(enumerate(severidades, 1)))
+    )
     relatorio["linhas_saida"] = len(df)
     return df, relatorio
 

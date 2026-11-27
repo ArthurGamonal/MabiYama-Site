@@ -10,10 +10,14 @@ OUT = os.environ.get("MABIYAMA_SAIDA", "./saida").rstrip("/") + "/"
 os.makedirs(OUT, exist_ok=True)
 PECAS = ["peca_A", "peca_B", "peca_C", "peca_D"]
 SENS = ["sensor_a", "sensor_b", "sensor_c", "sensor_d", "vibracao_mm_s"]
+SENSOR_AUX = "sensor_b"                           # sensor usado como sentinela auxiliar de cada peça
 CODIGOS = ["E1", "E2", "E3", "E4", "E5"]
 HORA_CORTE = 5
 ULTIMO_DIA_ROTULADO = pd.Timestamp("2023-09-29")   # janela de D vai até D+1 06:00; falhas conhecidas até 30/09 06:00
 CATS = ["modelo", "linha_producao", "firmware", "peca"]
+GRADE_N = 15                                      # passo da grade: falhas da mesma máquina caem em dias separados por múltiplos de 15
+GRADE_ORIGEM = pd.Timestamp("2022-10-01")
+FALHAS_CONHECIDAS_ATE = "2023-09-30 05:00"        # em out-dez a tabela de falhas não existe: o histórico fica congelado aqui
 
 
 # --------------------------------------------------------------------------- rótulo
@@ -105,13 +109,19 @@ def derivar_sentinelas(L_tr: pd.DataFrame):
     sent, alerta = {}, {}
     for p in PECAS:
         g = L_tr[L_tr["peca"] == p]
-        melhor = None
+        efeito = {}
         for s in SENS:
+            if f"{s}_z24" not in g.columns:          # sensor ausente na base (ex.: vibração na base nova)
+                continue
             z = g[f"{s}_z24"]
-            d = (z[g["y"] == 1].mean() - z[g["y"] == 0].mean()) / z.std()
-            if melhor is None or abs(d) > abs(melhor[1]):
-                melhor = (s, d)
+            efeito[s] = (z[g["y"] == 1].mean() - z[g["y"] == 0].mean()) / z.std()
+        ordem = sorted(efeito, key=lambda k: -abs(np.nan_to_num(efeito[k])))
+        melhor = (ordem[0], efeito[ordem[0]])
         sent[p] = (melhor[0], 1.0 if melhor[1] > 0 else -1.0)
+        # sentinela AUXILIAR: SENSOR_AUX (sensor_b) para toda peça; se ele já é o principal, o 2º melhor sensor
+        aux = SENSOR_AUX if (SENSOR_AUX in efeito and SENSOR_AUX != melhor[0]) else next((k for k in ordem if k != melhor[0]), None)
+        if aux is not None:
+            sent[p + "__aux"] = (aux, 1.0 if efeito[aux] > 0 else -1.0)
         taxa = {}
         for c in CODIGOS:
             m = g[f"alerta_ontem06h_cod_{c}"] == 1
@@ -123,6 +133,7 @@ def derivar_sentinelas(L_tr: pd.DataFrame):
 
 
 SENT_ASSINADAS = ["z6", "z24", "z72", "tend", "z6_lag12", "z6_lag24", "z6_lag36", "z6_lag48", "mf1", "mf25", "mf49"]
+SENT_AUX = ["z6", "z24", "z72", "tend", "z6_lag24", "mf1", "mf25", "mf49"]
 SENT_BRUTAS = ["med6", "med24", "dp24", "max24"]
 
 
@@ -140,6 +151,12 @@ def add_peca_features(L: pd.DataFrame, sent, alerta) -> pd.DataFrame:
             L.loc[m, f"sent_{nome}"] = sg * L.loc[m, f"{s}_{nome}"].to_numpy()
         for nome in SENT_BRUTAS:
             L.loc[m, f"sent_{nome}"] = L.loc[m, f"{s}_{nome}"].to_numpy()
+        if p + "__aux" in sent:                              # sentinela auxiliar -> colunas sentb_*
+            sa, sga = sent[p + "__aux"]
+            for nome in SENT_AUX:
+                if f"sentb_{nome}" not in L.columns:
+                    L[f"sentb_{nome}"] = np.nan
+                L.loc[m, f"sentb_{nome}"] = sga * L.loc[m, f"{sa}_{nome}"].to_numpy()
         for c in alerta[p]:
             L.loc[m, "alerta_peca"] += L.loc[m, f"alerta_ontem06h_cod_{c}"].to_numpy()
             for w in (24, 72, 168):                       # erros com o código desta peça
@@ -147,9 +164,9 @@ def add_peca_features(L: pd.DataFrame, sent, alerta) -> pd.DataFrame:
     # tempo desde o último alerta das 06:00 com o código desta peça (proxy de "dias desde a última falha da peça")
     L["horas_desde_alerta_peca"] = 3000.0
     for p in PECAS:
+        k = (L["peca"] == p).to_numpy()
         if not alerta[p]:
             continue
-        k = (L["peca"] == p).to_numpy()
         L.loc[k, "horas_desde_alerta_peca"] = np.minimum.reduce([L.loc[k, f"horas_desde_alerta06h_{c}"].to_numpy() for c in alerta[p]])
     # alerta de ontem 06h: quantos erros (1/2/3 => 9% / 57% / 81% de chance) e se o código é o desta peça
     n = L["alerta_ontem06h_n"].fillna(0)
@@ -195,6 +212,51 @@ def add_historico(L: pd.DataFrame, falhas: pd.DataFrame) -> pd.DataFrame:
     L["hist_taxa_maq"] = (cnt_m + r_all) / (expos_k + 1)
     L["hist_taxa_peca"] = (cnt_p + prior_p) / (expos_k + 1)
     L["hist_taxa_peca_rel"] = L["hist_taxa_peca"] / prior_p
+    return L
+
+
+def _grade_chave(L, f6, chave, cortes, di, N):
+    """Para cada linha de L: fase (resíduo mod N) mais votada entre as falhas JÁ CONHECIDAS no corte das 05:00,
+    nº de falhas conhecidas e fração de votos da fase vencedora. `chave` define o grupo (máquina, ou máquina+peça)."""
+    n_l = len(L)
+    fase, conf, nf = np.full(n_l, np.nan), np.full(n_l, np.nan), np.zeros(n_l)
+    norm = lambda k: k if isinstance(k, tuple) else (k,)
+    fg = {norm(k): (g["data_hora"].to_numpy().astype("datetime64[ns]"), g["r"].to_numpy()) for k, g in f6.groupby(chave)}
+    for k, idx in L.groupby(chave, observed=True).indices.items():
+        k = norm(k)
+        if k not in fg:
+            continue
+        t, r = fg[k]
+        add = np.zeros((len(cortes) + 1, N))
+        np.add.at(add, (np.searchsorted(cortes, t, side="left"), r), 1)   # 1º dia cujo corte já enxerga a falha
+        c = np.cumsum(add, axis=0)[:-1][di[idx]]                          # votos por fase conhecidos em cada dia
+        tot = c.sum(1)
+        ok = tot > 0
+        nf[idx] = tot
+        fase[idx[ok]] = c[ok].argmax(1)
+        conf[idx[ok]] = c[ok].max(1) / tot[ok]
+    return fase, conf, nf
+
+
+def add_grade(L: pd.DataFrame, falhas: pd.DataFrame, N: int = GRADE_N, conhecido_ate: str = FALHAS_CONHECIDAS_ATE) -> pd.DataFrame:
+    """Grade de N dias: a falha de um dia D (que acontece na data D+1, às 06:00) só ocorre se (D+1 - falha conhecida) for múltiplo de N.
+    A fase da grade vem de falhas das 06:00 ja conhecidas ate o corte das 05:00 do dia D (nada de futuro);
+    em out-dez o histórico fica congelado em `conhecido_ate`. Fase própria da peça (_mp) e da máquina (_m, todas as peças)."""
+    L = L.copy()
+    f6 = falhas.copy()
+    f6["data_hora"] = pd.to_datetime(f6["data_hora"])
+    f6 = f6[f6["data_hora"].dt.hour == 6].copy()
+    f6["r"] = ((f6["data_hora"].dt.normalize() - GRADE_ORIGEM).dt.days % N).astype(int)
+    dias = np.sort(L["dia"].unique()).astype("datetime64[ns]")
+    cortes = np.minimum(dias + np.timedelta64(HORA_CORTE, "h"), pd.Timestamp(conhecido_ate).to_datetime64().astype("datetime64[ns]"))
+    di = np.searchsorted(dias, L["dia"].to_numpy().astype("datetime64[ns]"))
+    rD = (((L["dia"] + pd.Timedelta(days=1)) - GRADE_ORIGEM).dt.days % N).to_numpy()
+    for nome, chave in (("mp", ["id_maquina", "peca"]), ("m", ["id_maquina"])):
+        fase, conf, nf = _grade_chave(L, f6, chave, cortes, di, N)
+        L[f"grade_on_{nome}"] = np.where(np.isnan(fase), np.nan, (fase == rD).astype(float))   # 1 = a data da falha cairia na grade
+        L[f"grade_dist_{nome}"] = (fase - rD) % N                                              # dias até a próxima data da grade (0 = hoje)
+        L[f"grade_conf_{nome}"] = conf
+        L[f"grade_n_{nome}"] = nf
     return L
 
 
@@ -279,3 +341,4 @@ def montar_submissao(out: pd.DataFrame, caminho_sample: str | None = None) -> pd
             raise ValueError(f"{len(falta)} ids do sample_submission sem previsão (ex.: {sorted(falta)[:3]})")
         sub = sub.loc[ex["id"]]
     return sub.reset_index()
+

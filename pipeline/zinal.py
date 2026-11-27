@@ -69,7 +69,7 @@ def carregar_erros(caminho):
     er["id_maquina"] = norm_id(er["id_maquina"])
     er["data_hora"] = ns(er["data_hora"])
     er["severidade"] = er["severidade"].astype(str).str.strip().str.lower()
-    er = er.sort_values("data_hora", kind="stable")
+    er = er.sort_values("data_hora")
 
     # agregado por máquina x hora (vários erros na mesma hora viram uma linha)
     er["_hora"] = er["data_hora"].dt.floor("h")

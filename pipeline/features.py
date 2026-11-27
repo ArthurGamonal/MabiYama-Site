@@ -20,6 +20,9 @@ SEV = {"baixa": 1, "media": 2, "alta": 3}
 OP_COLS = ["pecas_produzidas", "meta_producao", "pecas_defeituosas",
            "consumo_energia_kwh", "utilizacao_pct", "tempo_setup_min", "qtd_operadores"]
 HORA_CORTE = 5
+# colunas que a base2 NOVA não traz mais (vibracao, qualidade_leitura, tempo_reconhecimento, operação detalhada,
+# capacidade_nominal_h, data_instalacao, firmware): as features que dependem delas são puladas automaticamente.
+OBRIGATORIAS = ["data_hora", "id_maquina", "data_turno", "sensor_a", "n_erros_hora", "severidade_max_hora", "codigo_erro_ultimo"]
 # Filtro casado: a rampa do sensor-sentinela sobe linearmente de ~0 (66h antes da falha) a ~1 (12h antes) e estabiliza.
 # Falhas são carimbadas às 06:00 e o corte é 05:00, então o instante da falha em relação ao corte é 1h, 25h, 49h...
 TAUS = (1, 25, 49)
@@ -57,7 +60,15 @@ def _long(frame, nome, cortes):
 
 # --------------------------------------------------------------------------- principal
 def construir_features(df: pd.DataFrame, primeiro_dia=None, ultimo_dia=None) -> pd.DataFrame:
+    falta = [c for c in OBRIGATORIAS if c not in df.columns]
+    assert not falta, f"base sem colunas obrigatórias: {falta}"
     df = limpar(df)
+    sens = [s for s in SENS if s in df.columns]
+    op_cols = [c for c in OP_COLS if c in df.columns]
+    ausentes = [c for c in SENS + OP_COLS + ["qualidade_leitura", "tempo_reconhecimento_medio_min", "capacidade_nominal_h",
+                                             "data_instalacao", "versao_firmware_ultima"] if c not in df.columns]
+    if ausentes:
+        print("[features] colunas ausentes na base (features correspondentes puladas):", ausentes)
     idx = pd.date_range(df["data_hora"].min().floor("h"), df["data_hora"].max().floor("h"), freq="h")
     maquinas = sorted(df["id_maquina"].unique())
 
@@ -71,7 +82,7 @@ def construir_features(df: pd.DataFrame, primeiro_dia=None, ultimo_dia=None) -> 
     cols = {}
 
     # ---------------- sensores: média/desvio/máximo por janela + z em relação à própria máquina
-    for s in SENS:
+    for s in sens:
         W = _wide(df, s, idx)[maquinas]
         base_m = W.expanding(min_periods=48).mean()
         base_s = W.expanding(min_periods=48).std().replace(0, np.nan)
@@ -100,8 +111,9 @@ def construir_features(df: pd.DataFrame, primeiro_dia=None, ultimo_dia=None) -> 
             cols["horas_sem_leitura_24h"] = _long(W.isna().astype(float).rolling(24).sum(), "horas_sem_leitura_24h", cortes)
 
     # ---------------- qualidade da leitura
-    susp = _wide(df.assign(x=(df["qualidade_leitura"] == "suspeita").astype(float)), "x", idx)[maquinas]
-    cols["leituras_suspeitas_24h"] = _long(susp.rolling(24, min_periods=1).sum(), "leituras_suspeitas_24h", cortes)
+    if "qualidade_leitura" in df.columns:
+        susp = _wide(df.assign(x=(df["qualidade_leitura"] == "suspeita").astype(float)), "x", idx)[maquinas]
+        cols["leituras_suspeitas_24h"] = _long(susp.rolling(24, min_periods=1).sum(), "leituras_suspeitas_24h", cortes)
     imp_cols = [c for c in df.columns if c.endswith("_imputado")]
     df["_imp"] = df[imp_cols].any(axis=1).astype(float)
     imp = _wide(df, "_imp", idx)[maquinas]
@@ -120,8 +132,9 @@ def construir_features(df: pd.DataFrame, primeiro_dia=None, ultimo_dia=None) -> 
     for w in [24, 72, 168]:
         for nome, F in flags.items():
             cols[f"err_{nome}_{w}h"] = _long(F.rolling(w, min_periods=1).sum(), f"err_{nome}_{w}h", cortes)
-    rec = _wide(df, "tempo_reconhecimento_medio_min", idx)[maquinas]
-    cols["err_rec_med_72h"] = _long(rec.rolling(72, min_periods=1).mean(), "err_rec_med_72h", cortes)
+    if "tempo_reconhecimento_medio_min" in df.columns:
+        rec = _wide(df, "tempo_reconhecimento_medio_min", idx)[maquinas]
+        cols["err_rec_med_72h"] = _long(rec.rolling(72, min_periods=1).mean(), "err_rec_med_72h", cortes)
 
     # horas desde o último erro, e seu código/severidade
     horas = np.arange(len(idx), dtype=float)[:, None]
@@ -155,48 +168,60 @@ def construir_features(df: pd.DataFrame, primeiro_dia=None, ultimo_dia=None) -> 
                                       "alerta06h_ult72h", cortes)
 
     # ---------------- operação: apenas turnos COMPLETOS (turno D-2 e anteriores)
-    dd = df.groupby(["id_maquina", "data_turno"])[OP_COLS].mean().reset_index()
-    dias_op = pd.date_range(dd["data_turno"].min(), dd["data_turno"].max() + pd.Timedelta(days=3), freq="D")
-    for c in OP_COLS:
-        Wo = dd.pivot(index="data_turno", columns="id_maquina", values=c).reindex(dias_op)[maquinas]
-        Wo = Wo.astype(float).rolling(3, min_periods=1).mean().shift(2)     # média dos 3 últimos turnos fechados
-        s = Wo.reindex(dias).stack(future_stack=True).rename(f"op_{c}")
-        s.index.names = ["dia", "id_maquina"]
-        cols[f"op_{c}"] = s
+    if op_cols:
+        dd = df.groupby(["id_maquina", "data_turno"])[op_cols].mean().reset_index()
+        dias_op = pd.date_range(dd["data_turno"].min(), dd["data_turno"].max() + pd.Timedelta(days=3), freq="D")
+        for c in op_cols:
+            Wo = dd.pivot(index="data_turno", columns="id_maquina", values=c).reindex(dias_op)[maquinas]
+            Wo = Wo.rolling(3, min_periods=1).mean().shift(2)     # média dos 3 últimos turnos fechados
+            s = Wo.reindex(dias).stack(future_stack=True).rename(f"op_{c}")
+            s.index.names = ["dia", "id_maquina"]
+            cols[f"op_{c}"] = s
 
     X = pd.concat(cols.values(), axis=1)
     X.columns = list(cols.keys())
-    X["op_prod_vs_meta"] = X["op_pecas_produzidas"] / X["op_meta_producao"]
-    X["op_taxa_defeito"] = X["op_pecas_defeituosas"] / X["op_pecas_produzidas"]
+    if {"op_pecas_produzidas", "op_meta_producao"} <= set(X.columns):
+        X["op_prod_vs_meta"] = X["op_pecas_produzidas"] / X["op_meta_producao"]
+    if {"op_pecas_defeituosas", "op_pecas_produzidas"} <= set(X.columns):
+        X["op_taxa_defeito"] = X["op_pecas_defeituosas"] / X["op_pecas_produzidas"]
     X = X.reset_index()
 
     # ---------------- cadastro da máquina e idade na data do corte
-    cad = df.sort_values("data_hora").groupby("id_maquina").agg(
-        modelo=("modelo", "first"), linha_producao=("linha_producao", "first"),
-        capacidade_nominal_h=("capacidade_nominal_h", "first"), potencia_kw=("potencia_kw", "first"),
-        data_instalacao=("data_instalacao", lambda s: s.dropna().iloc[0] if s.notna().any() else pd.NaT),
-        idade_ini=("idade", lambda s: s.dropna().iloc[0] if s.notna().any() else np.nan),
-        ini=("data_hora", "min")).reset_index()
-    est = cad["ini"] - pd.to_timedelta(cad["idade_ini"].astype(float) * 365.25, unit="D")
-    cad["inst"] = pd.to_datetime(cad["data_instalacao"]).fillna(est)
-    X = X.merge(cad.drop(columns=["data_instalacao", "idade_ini", "ini"]), on="id_maquina", how="left")
+    primeiro = lambda s: s.dropna().iloc[0] if s.notna().any() else np.nan
+    cad_cols = [c for c in ["modelo", "fabricante", "linha_producao", "capacidade_nominal_h", "potencia_kw"] if c in df.columns]
+    agg = {c: (c, "first") for c in cad_cols}
+    if "data_instalacao" in df.columns:
+        agg["data_instalacao"] = ("data_instalacao", lambda s: s.dropna().iloc[0] if s.notna().any() else pd.NaT)
+    if "idade" in df.columns:
+        agg["idade_ini"] = ("idade", primeiro)
+    agg["ini"] = ("data_hora", "min")
+    cad = df.sort_values("data_hora").groupby("id_maquina").agg(**agg).reset_index()
+    # instalação: a da base, se houver; senão estimada pela idade na primeira leitura (a base2 nova só traz 'idade')
+    inst = pd.Series(pd.NaT, index=cad.index, dtype="datetime64[ns]")
+    if "idade_ini" in cad.columns:
+        inst = cad["ini"] - pd.to_timedelta(cad["idade_ini"] * 365.25, unit="D")
+    if "data_instalacao" in cad.columns:
+        inst = pd.to_datetime(cad["data_instalacao"]).fillna(inst)
+    cad["inst"] = inst
+    X = X.merge(cad.drop(columns=[c for c in ["data_instalacao", "idade_ini", "ini"] if c in cad.columns]), on="id_maquina", how="left")
     X["idade_anos"] = (X["dia"] - X["inst"]).dt.days / 365.25
     X = X.drop(columns="inst")
 
-    # firmware vigente no corte
-    fw = df[["id_maquina", "data_hora", "versao_firmware_ultima"]].dropna()
-    fw = fw.pivot_table(index="data_hora", columns="id_maquina", values="versao_firmware_ultima", aggfunc="last")
-    fw = fw.reindex(index=idx, columns=maquinas).ffill()
-    fws = fw.reindex(cortes)
-    fws.index = fws.index.normalize()
-    fws = fws.stack().rename("firmware").reset_index()
-    fws.columns = ["dia", "id_maquina", "firmware"]
-    X = X.merge(fws, on=["dia", "id_maquina"], how="left")
+    # firmware vigente no corte (só se a base trouxer)
+    if "versao_firmware_ultima" in df.columns:
+        fw = df[["id_maquina", "data_hora", "versao_firmware_ultima"]].dropna()
+        fw = fw.pivot_table(index="data_hora", columns="id_maquina", values="versao_firmware_ultima", aggfunc="last")
+        fw = fw.reindex(idx).ffill()[maquinas]
+        fws = fw.reindex(cortes)
+        fws.index = fws.index.normalize()
+        fws = fws.stack().rename("firmware").reset_index()
+        fws.columns = ["dia", "id_maquina", "firmware"]
+        X = X.merge(fws, on=["dia", "id_maquina"], how="left")
 
-    X = X.replace([np.inf, -np.inf], np.nan)
     X["dia_semana"] = X["dia"].dt.dayofweek
-    for c in ["modelo", "linha_producao", "firmware"]:
-        X[c] = X[c].astype("category")
+    for c in ["modelo", "fabricante", "linha_producao", "firmware"]:
+        if c in X.columns:
+            X[c] = X[c].astype("category")
     return X.sort_values(["dia", "id_maquina"]).reset_index(drop=True)
 
 

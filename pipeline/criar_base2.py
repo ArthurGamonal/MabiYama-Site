@@ -57,18 +57,7 @@ faltando = [c for c in REMOVER_EXATO if c not in base.columns]
 if faltando:
     print("Aviso: estas colunas não existem na base e foram ignoradas:", faltando)
 
-# Colunas que a versão fornecida de features.py usa diretamente.
-NECESSARIAS = {
-    "vibracao_mm_s", "qualidade_leitura", "tempo_reconhecimento_medio_min",
-    "versao_firmware_ultima", "pecas_produzidas", "meta_producao", "pecas_defeituosas",
-    "consumo_energia_kwh", "tempo_setup_min", "qtd_operadores", "capacidade_nominal_h",
-    "data_instalacao",
-}
-
-
 def sai(c):
-    if c in NECESSARIAS:
-        return False
     return c.startswith(REMOVER_PREFIXO) or c.endswith(REMOVER_SUFIXO) or c in REMOVER_EXATO
 
 

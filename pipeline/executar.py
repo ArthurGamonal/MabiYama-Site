@@ -18,7 +18,11 @@ def preparar_falhas(pasta):
 
     falhas = pd.read_csv(pasta / "falhas.csv", dtype=str)
     falhas = falhas[["data_hora", "id_maquina", "peca"]].copy()
-    falhas["data_hora"] = pd.to_datetime(falhas["data_hora"], format="mixed", dayfirst=True, errors="coerce")
+    datas = falhas["data_hora"].str.strip()
+    iso = datas.str.match(r"^\d{4}-", na=False)
+    falhas["data_hora"] = pd.to_datetime(datas.where(iso), format="ISO8601", errors="coerce").fillna(
+        pd.to_datetime(datas.where(~iso), format="mixed", dayfirst=True, errors="coerce")
+    )
     falhas["id_maquina"] = falhas["id_maquina"].str.strip().str.upper()
     letra = (falhas["peca"].str.normalize("NFKD").str.encode("ascii", "ignore")
              .str.decode("ascii").str.lower().str.extract(r"^\s*peca[ _-]*([a-d])\s*$", expand=False))
@@ -32,7 +36,7 @@ def preparar_falhas(pasta):
 def ler_resultado(pasta, saida):
     import pandas as pd
 
-    caminho = saida / "submission.csv"
+    caminho = saida / "submission_v8b.csv"
     sub = pd.read_csv(caminho)
     if list(sub) != ["id", *PECAS] or sub.empty or sub["id"].duplicated().any():
         raise ValueError("O treinamento não gerou uma submission válida.")
@@ -72,7 +76,16 @@ def ler_resultado(pasta, saida):
                      int(troca["duracao_min"]) if pd.notna(troca["duracao_min"]) else None,
                      float(troca["custo_troca_reais"]) if pd.notna(troca["custo_troca_reais"]) else None]
             manut.setdefault(posicao, {}).setdefault(peca[-1], []).append(ficha)
-    return {"csv": caminho.read_text(encoding="utf-8"), "maquinas": maquinas, "manutencao": manut}
+    probabilidades = sub[list(PECAS)]
+    peca_pico = probabilidades.max().idxmax()
+    linha_pico = probabilidades[peca_pico].idxmax()
+    pico = {
+        "maquina": ids.at[linha_pico, 0],
+        "data": ids.at[linha_pico, 1],
+        "peca": peca_pico[-1],
+        "probabilidade": float(probabilidades.at[linha_pico, peca_pico]),
+    }
+    return {"csv": caminho.read_text(encoding="utf-8"), "maquinas": maquinas, "manutencao": manut, "pico": pico}
 
 
 def executar(pasta, informar):
@@ -113,3 +126,5 @@ def executar(pasta, informar):
     rodar("treinar.py")
     informar(6)
     return ler_resultado(pasta, saida)
+
+

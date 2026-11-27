@@ -31,6 +31,12 @@
     aplicarTreino(dados);
     versao = dados.id;
     mensagemResultado = `Painel atualizado com a previsão de ${dados.maquinas.length} máquinas.`;
+    if (dados.pico) {
+      const { maquina, data, peca, probabilidade } = dados.pico;
+      const dia = data.split('-').reverse().join('/');
+      const percentual = probabilidade.toLocaleString('pt-BR', { style:'percent', maximumFractionDigits:2 });
+      mensagemResultado += ` Maior risco previsto no período: ${percentual} · ${maquina} · peça ${peca} · ${dia}.`;
+    }
     ver.hidden = false;
     if (estado.aba === 'campo') campoAbrirDoLink();
     return dados;
