@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, roc_auc_score, brier_score_loss
+from mb_extra import aplicar_grade
 
 # pasta com base2_completa.parquet e falhas.parquet / pasta de saída (mude por variável de ambiente)
 U = os.environ.get("MABIYAMA_DADOS", "./dados").rstrip("/") + "/"
@@ -315,7 +316,8 @@ def prever_prob(art: dict, L: pd.DataFrame) -> np.ndarray:
             k = (L["peca"] == peca).to_numpy()
             p[k] = m.predict_proba(L.loc[k, art["cols_peca"]])[:, 1]
         ps.append(p)
-    return np.mean(ps, axis=0)
+    prob = np.mean(ps, axis=0)
+    return aplicar_grade(L, prob) if art.get("usar_grade") else prob
 
 
 def ap_por_peca(L: pd.DataFrame, p):

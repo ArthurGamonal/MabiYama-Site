@@ -1,5 +1,6 @@
 """Orquestra os scripts do projeto em uma pasta isolada por envio."""
 import csv
+import json
 import os
 import re
 import subprocess
@@ -36,7 +37,7 @@ def preparar_falhas(pasta):
 def ler_resultado(pasta, saida):
     import pandas as pd
 
-    caminho = saida / "submission_v8b.csv"
+    caminho = saida / "submission.csv"
     sub = pd.read_csv(caminho)
     if list(sub) != ["id", *PECAS] or sub.empty or sub["id"].duplicated().any():
         raise ValueError("O treinamento não gerou uma submission válida.")
@@ -88,33 +89,47 @@ def ler_resultado(pasta, saida):
     return {"csv": caminho.read_text(encoding="utf-8"), "maquinas": maquinas, "manutencao": manut, "pico": pico}
 
 
+def preparar_entradas(pasta):
+    import pandas as pd
+
+    preparar_falhas(pasta)
+    modelo = SCRIPTS / "sample_submission.csv"
+    with modelo.open(encoding="utf-8-sig", newline="") as arq:
+        frota_modelo = {linha["id"].rsplit("_", 1)[0] for linha in csv.DictReader(arq)}
+    frota = set(pd.read_parquet(pasta / "telemetria_tratada.parquet", columns=["id_maquina"])["id_maquina"])
+    if frota == frota_modelo:
+        copyfile(modelo, pasta / "sample_submission.csv")
+
+
 def executar(pasta, informar):
     saida = pasta / "saida"
     saida.mkdir()
-    env = dict(os.environ, PYTHONUTF8="1", MABIYAMA_DADOS=str(pasta), MABIYAMA_SAIDA=str(saida))
+    env = dict(os.environ, PYTHONUTF8="1", MABIYAMA_DADOS=str(pasta), MABIYAMA_SAIDA=str(saida),
+               OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
+               NUMEXPR_NUM_THREADS="1")
 
     def rodar(script, *args):
         comando = [sys.executable, "-u", str(SCRIPTS / script), *map(str, args)]
-        processo = subprocess.run(comando, cwd=pasta, env=env, stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
-        print(processo.stdout, end="", flush=True)
-        if processo.returncode:
-            linhas = processo.stdout.strip().splitlines()
-            raise RuntimeError(f"{script}: {linhas[-1] if linhas else 'o script foi interrompido'}")
+        with subprocess.Popen(comando, cwd=pasta, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace") as processo:
+            ultima = ""
+            for linha in processo.stdout:
+                print(linha, end="", flush=True)
+                if linha.strip():
+                    ultima = linha.strip()
+            codigo = processo.wait()
+        if codigo in (-9, 137):
+            raise RuntimeError(f"{script}: processo interrompido pelo servidor. Consulte a memória e os logs no Render.")
+        if codigo:
+            detalhe = ultima or f"processo encerrado com código {codigo}"
+            raise RuntimeError(f"{script}: {detalhe}")
 
     informar(1)
     rodar("tratamento_telemetria_maquina.py", pasta, pasta)
     rodar("tratamento_operacao.py", "operacao.csv", "operacaoTratado.parquet")
     rodar("tratamento_erros.py", "erros.csv", "errostratado.parquet")
     rodar("TratamentoManutencao.py", "manutencao.csv", "manutencao.parquet")
-    preparar_falhas(pasta)
-    # O sample do desafio só ordena a submission quando pertence à frota enviada.
-    with (SCRIPTS / "sample_submission.csv").open(encoding="utf-8-sig", newline="") as modelo:
-        frota_modelo = {linha["id"].rsplit("_", 1)[0] for linha in csv.DictReader(modelo)}
-    import pandas as pd
-    frota = set(pd.read_parquet(pasta / "telemetria_tratada.parquet", columns=["id_maquina"])["id_maquina"])
-    if frota == frota_modelo:
-        copyfile(SCRIPTS / "sample_submission.csv", pasta / "sample_submission.csv")
+    rodar("executar.py", "preparar", pasta)
 
     informar(2)
     rodar("zinal.py", pasta)
@@ -125,6 +140,19 @@ def executar(pasta, informar):
     informar(5)
     rodar("treinar.py")
     informar(6)
-    return ler_resultado(pasta, saida)
+    rodar("executar.py", "resultado", pasta)
+    return json.loads((pasta / "resultado_pipeline.json").read_text(encoding="utf-8"))
 
 
+if __name__ == "__main__":
+    etapa, caminho = sys.argv[1:]
+    pasta = Path(caminho)
+    if etapa == "preparar":
+        preparar_entradas(pasta)
+    elif etapa == "resultado":
+        resultado = ler_resultado(pasta, pasta / "saida")
+        (pasta / "resultado_pipeline.json").write_text(
+            json.dumps(resultado, ensure_ascii=False, allow_nan=False), encoding="utf-8"
+        )
+    else:
+        raise ValueError(f"Etapa inválida: {etapa}")

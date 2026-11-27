@@ -1,286 +1,186 @@
-"""treinar_v8a.py -- VERSÃO 8 (itens 2, 5, 6).
-Base: treinar.py v7 (AP teste 0,755 / Kaggle 0,65). Mudanças, numeradas como na lista de sugestões:
-  2) fase de 15 dias + REANCORAGEM por picos do sensor-sentinela (dias/visitas desde o último pico, nº de picos)   [FASE15]
-  5) reforço do sentinela: evidência de 2 dias seguidos (mf25 de hoje + mf49 de ontem), diferenças, ranking no dia [SENT_EXTRA]
-  6) estabilidade: 9 sementes em 3 variantes de hiperparâmetros e nº de árvores FIXO por variante (mediana)        [ESTABILIDADE]
-  3) poda: remove colunas de importância ~0 (cumulativa > PODA_ACUM no CSV do v7)                                  [PODAR = False]
-  4) sem colunas "impressão digital" da máquina (idade_anos, taxas históricas, fornecedor/técnico, firmware...)   [SEM_IDENTIDADE = False]
-Arquivos na mesma pasta: mb.py, mb_extra.py, mb_troca.py, mb_nb26.py | saída: *_v8a.* (não sobrescreve o v7).
-Para a poda é preciso existir OUT/importancia_features_v7.csv (gerado pelo treinar v7).
-"""
-import json, time, warnings, joblib
+"""Hiperparâmetros fixos, avaliação única no teste, refit com todos os rótulos e previsão de out-dez/2023."""
+import json, warnings, joblib
 import numpy as np, pandas as pd, xgboost as xgb
 from sklearn.metrics import average_precision_score
 from mb import *
-from mb_extra import add_competicao, COMP_COLS, mascara_grade
-from mb_troca import add_troca, diagnostico_troca
-from mb_nb26 import NB26
-from pathlib import Path
-from selecao import SelecaoFeatures, SUF
+from mb_extra import aplicar_grade, mascara_grade
 
 warnings.filterwarnings("ignore")
-T0 = time.time()
-def marca(msg): print(f"[{time.time() - T0:6.0f}s] {msg}", flush=True)
 
-# ================================ CONFIGURAÇÃO ================================
-VERSAO = "v8b"
-PARAMS = dict(learning_rate=0.03, max_depth=4, min_child_weight=10, subsample=0.8, colsample_bytree=0.5,
-              reg_lambda=5, reg_alpha=0.1, gamma=0.5)
-ESTABILIDADE = True                                   # item 6
-N_SEEDS = 9 if ESTABILIDADE else 3
-PARAMS_VAR = [PARAMS,
-              dict(PARAMS, max_depth=3, colsample_bytree=0.4, min_child_weight=12),
-              dict(PARAMS, max_depth=5, colsample_bytree=0.6, min_child_weight=8, gamma=1.0)] if ESTABILIDADE else [PARAMS]
+PARAMS_UNIFICADO = dict(
+    learning_rate=0.03, max_depth=4, min_child_weight=10, subsample=0.8,
+    colsample_bytree=0.6, reg_lambda=5, reg_alpha=0.1, gamma=0.5,
+)
+PARAMS_POR_PECA = {**PARAMS_UNIFICADO, "max_depth": 3, "min_child_weight": 5}
+TIPO_MODELO = "unificado"  # unificado, por_peca, ensemble ou auto
 EARLY_STOP = True
-USAR_GRADE, USAR_TROCA, USAR_COMPETICAO = True, True, True
-FILTRO_GRADE, TREINAR_SO_GRADE, MASCARA, PISO_GRADE = True, True, "grade", 1e-3
-EXTRA_COMP = ["gt_idade_dias"]
-USAR_NB_ESTATICO = True
-USAR_NB_DEP = True
-USAR_RISCO = False        # suspeito de vazamento: manter False
-COMPARAR_BASELINE = False # o v7 já foi medido; evita 1 treino extra
-FASE15 = True             # item 2
-SENT_EXTRA = True         # item 5
-PODAR = False         # item 3
-PODA_ACUM = 0.90          # mantém as colunas que formam 90% da importância do v7 (~280 de 502)
-SEM_IDENTIDADE = False  # item 4
-SELECAO = True            # poda por importância (CSV do v8a) + duplicação das features mais importantes
-IMP_MIN, N_DUP, COPIAS = 5e-4, 0, 0   # varrer: (0,0,0) controle | (5e-4,0,0) só poda | (5e-4,20,2) | (1e-3,30,1)
-IDENT = ["idade_anos", "nbd_hist_taxa", "nbd_hist_taxa_total", "nbd_inst_taxa_forn", "nbd_inst_taxa_tec",
-         "firmware", "modelo", "linha_producao"]
-# (nbd_inst_idade = dias desde a última troca/manutenção DA PEÇA: é sinal legítimo, NÃO entra em IDENT)
-# ==============================================================================
-if not USAR_GRADE:
-    FILTRO_GRADE = TREINAR_SO_GRADE = USAR_TROCA = False
-USAR_NB = USAR_NB_ESTATICO or USAR_NB_DEP
-USAR_EXTRA = FASE15 or SENT_EXTRA
-KEY = ["id_maquina", "peca", "dia"]
-NOVAS = []
+N_ARVORES = 600  # usado quando EARLY_STOP é False
+HIPERPARAMETROS = {"unificado": PARAMS_UNIFICADO, "por_peca": PARAMS_POR_PECA}
 
-def mascara(L):
-    m = np.ones(len(L), dtype=bool)
-    if MASCARA in ("grade", "ambas") and "grade_on_m" in L.columns:
-        m &= mascara_grade(L)
-    if MASCARA in ("troca", "ambas") and "gt_on_m" in L.columns:
-        m &= (L["gt_on_m"] != 0).to_numpy()
-    return m
-
-def aplicar(L, p):
-    p = np.asarray(p, dtype=float)
-    return np.where(mascara(L), p, p * PISO_GRADE) if FILTRO_GRADE else p
-
-def so_grade(d):
-    return d[mascara(d)] if TREINAR_SO_GRADE else d
-
-def features(d, s, a):
-    d = add_peca_features(d, s, a)
-    if USAR_COMPETICAO:
-        d = add_competicao(d, COMP_COLS + EXTRA_COMP)
-    return d
-
-CHAVE = ["id_maquina", "dia", "peca"]
-def add_dep(d, corte, extra):
-    if not (USAR_NB and USAR_NB_DEP):
-        return d
-    keys = d[["id_maquina", "dia"]].drop_duplicates().reset_index(drop=True)
-    return d.merge(nb.dep_long(keys, corte=corte, extra=extra), on=CHAVE, how="left")
-
-# >>> EXTRA (itens 2 e 5) -------------------------------------------------------------------------------
-def limiares_pico(d):
-    """Por peça: limiares de sent_mf1 que marcam 'a falha acabou de acontecer' (06:00 de hoje).
-    Calibrados só com rótulos do bloco passado (y de ontem == 1 => mf1 de hoje é o pico da falha)."""
-    out = {}
-    if "sent_mf1" not in d.columns:
-        return out
-    t = d[["id_maquina", "peca", "dia", "y", "sent_mf1"]].sort_values(["id_maquina", "peca", "dia"]).copy()
-    t["yp"] = t.groupby(["id_maquina", "peca"], observed=True)["y"].shift(1)
-    t["pc"] = t["peca"].astype(str)
-    for p, s in t.groupby("pc"):
-        v, ref = s.loc[s["yp"] == 1, "sent_mf1"].dropna(), s["sent_mf1"].dropna()
-        lo, hi = (v.quantile(0.10), v.quantile(0.50)) if len(v) >= 15 else (ref.quantile(0.99), ref.quantile(0.995))
-        out[p] = (float(lo), float(hi))
-    return out
-
-def add_extra(parts, thr):
-    """parts: [tr, va, te] (ou [Lf, Q]) em ordem cronológica, já com sent_*/gt_*. Calcula features que precisam de
-    continuidade entre blocos usando SÓ o passado (sensores existem em out-dez), e devolve a lista com colunas novas."""
-    global NOVAS
-    base = pd.concat([p.assign(_b=i) for i, p in enumerate(parts)], ignore_index=True)
-    core = base.sort_values(KEY + ["_b"], kind="stable").drop_duplicates(KEY).reset_index(drop=True)
-    gk = [core["id_maquina"], core["peca"]]
-    g = core.groupby(["id_maquina", "peca"], sort=False, observed=True)
-    ok = (core["dia"] - g["dia"].shift(1)).dt.days == 1          # lag de 1 linha só vale se for o dia anterior
-    new = {}
-    if FASE15:
-        for nome, col in (("fx_idade", "gt_idade_dias"), ("fx_idmaq", "gt_idade_maq_dias")):
-            if col in core.columns:
-                a = core[col].astype(float)
-                fase = np.mod(a, 15)
-                new[f"{nome}_fase15"] = fase
-                new[f"{nome}_dist15"] = np.mod(15 - fase, 15)
-                new[f"{nome}_perto15"] = np.minimum(fase, np.mod(15 - fase, 15))
-        if "sent_mf1" in core.columns and thr:
-            lo = core["peca"].astype(str).map(lambda p: thr.get(p, (np.nan, np.nan))[0])
-            hi = core["peca"].astype(str).map(lambda p: thr.get(p, (np.nan, np.nan))[1])
-            for nome, lim in (("lo", lo), ("hi", hi)):
-                flag = (core["sent_mf1"] >= lim)
-                ult = core["dia"].where(flag).groupby(gk, observed=True).ffill()
-                dsp = (core["dia"] - ult).dt.days.astype(float)  # NaN = nunca visto
-                new[f"fx_dsp_{nome}"] = dsp
-                new[f"fx_vis_{nome}"] = np.ceil(dsp / 15)         # mesmo conceito de nbd_rec_*: visitas desde o pico
-                new[f"fx_fase_pico_{nome}"] = np.mod(dsp + 1, 15)
-                if nome == "lo":
-                    new["fx_npicos_30"] = flag.astype(float).groupby(gk, observed=True).transform(
-                        lambda s: s.rolling(30, min_periods=1).sum())
-    if SENT_EXTRA and {"sent_mf1", "sent_mf25", "sent_mf49"} <= set(core.columns):
-        m1, m25, m49 = core["sent_mf1"], core["sent_mf25"], core["sent_mf49"]
-        m49l = g["sent_mf49"].shift(1).where(ok)                  # mf49 de ontem = mesma falha prevista 24h antes
-        new["sx_mf_max"] = pd.concat([m1, m25, m49], axis=1).max(axis=1, skipna=False)
-        new["sx_mf49_lag1"] = m49l
-        new["sx_ev_media"] = (m25 + m49l) / 2
-        new["sx_ev_min"] = pd.concat([m25, m49l], axis=1).min(axis=1, skipna=False)
-        new["sx_mf25_d1"] = m25 - g["sent_mf25"].shift(1).where(ok)
-        new["sx_mf25_vs_hist"] = m25 - g["sent_mf25"].transform(lambda s: s.shift(1).rolling(30, min_periods=5).mean())
-        gd = core.groupby(["dia", "peca"], observed=True)["sent_mf25"]
-        new["sx_mf25_rk_dia"] = gd.rank(pct=True)
-        new["sx_mf49_rk_dia"] = core.groupby(["dia", "peca"], observed=True)["sent_mf49"].rank(pct=True)
-        new["sx_mf25_z_dia"] = (m25 - gd.transform("mean")) / gd.transform("std").replace(0, np.nan)
-    feat = pd.DataFrame(new).astype("float32")
-    for k in KEY:
-        feat[k] = core[k]
-    NOVAS = list(new)
-    out = []
-    for p in parts:
-        q = p.drop(columns=[c for c in NOVAS if c in p.columns]).merge(feat, on=KEY, how="left")
-        assert len(q) == len(p)
-        out.append(q)
-    return out
-# <<< EXTRA ---------------------------------------------------------------------------------------------
-
-# ---------------------------------------------------------------- dados
 X = pd.read_parquet(OUT + "features_maquina_dia.parquet")
 falhas = pd.read_parquet(U + "falhas.parquet")
 Lall = montar_longo(X, falhas)
+del X
 Lall = add_historico(Lall, falhas)
-if USAR_GRADE:
-    Lall = add_grade(Lall, falhas); marca("grade calculada")
-if USAR_TROCA:
-    manut = pd.read_parquet(U + "manutencao.parquet")
-    Lall = add_troca(Lall, manut, falhas); marca("features de troca calculadas")
+if MODO_ROTULO == "vespera":
+    Lall = add_grade(Lall, falhas)
 L = Lall[Lall["dia"] <= ULTIMO_DIA_ROTULADO].reset_index(drop=True)
+Q = Lall[(Lall["dia"] >= "2023-09-30") & (Lall["dia"] <= "2023-12-30")].reset_index(drop=True)   # 92 dias do sample_submission
+del Lall
+
 tr_d, va_d, te_d = split_temporal(L["dia"].unique())
-
-nb = None
-if USAR_NB:
-    nb = NB26(U, corte_z=va_d[0], usar_risco=USAR_RISCO)
-    keys = Lall[["id_maquina", "dia"]].drop_duplicates().reset_index(drop=True)
-    W = nb.estatico_wide(keys); marca(f"nb26: {W.shape[1]} colunas estáticas")
-    Ltr = L[L["dia"].isin(tr_d)]
-    nb.aprender(keys, W, Ltr[mascara(Ltr)][["id_maquina", "dia", "peca", "y"]])
-    S = nb.estatico_long(keys, W) if USAR_NB_ESTATICO else None
-    if S is not None:
-        Lall = Lall.merge(S, on=CHAVE, how="left"); del S
-    L = Lall[Lall["dia"] <= ULTIMO_DIA_ROTULADO].reset_index(drop=True)
-    marca(f"base unificada: {L.shape[1]} colunas")
-
 tr, va, te = (L[L["dia"].isin(d)].reset_index(drop=True) for d in (tr_d, va_d, te_d))
 sent, alerta = derivar_sentinelas(tr)
-tr, va, te = (features(d, sent, alerta) for d in (tr, va, te))
-if USAR_NB and USAR_NB_DEP:
-    tr = add_dep(tr, None, None)
-    va = add_dep(va, va_d[0], nb.pseudo_por_erros(va_d[0], va_d[-1]))
-    te = add_dep(te, te_d[0], nb.pseudo_por_erros(te_d[0], te_d[-1]))
-if USAR_EXTRA:
-    tr, va, te = add_extra([tr, va, te], limiares_pico(tr)); marca(f"features novas (itens 2/5): {len(NOVAS)}")
-cols_u = colunas_modelo(tr, True)
-if USAR_EXTRA:
-    cols_u = cols_u + [c for c in NOVAS if c in tr.columns and c not in cols_u]
-if SEM_IDENTIDADE:                                                                   # item 4
-    cols_u = [c for c in cols_u if c not in IDENT]
-if PODAR:                                                                            # item 3
-    ip = pd.read_csv(OUT + "importancia_features_v7.csv", index_col=0)["importancia"].sort_values(ascending=False)
-    ok_poda = set(ip.index[(ip.cumsum() - ip) < PODA_ACUM])
-    cols_u = [c for c in cols_u if (c in ok_poda) or (c not in ip.index)]            # colunas novas (fora do CSV) sempre ficam
-sel = None
-if SELECAO:
-    sel = SelecaoFeatures(str(Path(__file__).with_name("importancia_features_v8a.csv")), imp_min=IMP_MIN, n_dup=N_DUP, copias=COPIAS)
-    n0 = len(cols_u)
-    cols_u = sel.colunas(cols_u)
-    tr, va, te = (sel.adicionar_dups(d) for d in (tr, va, te))
-    marca(f"seleção: {n0} -> {len(cols_u)} colunas ({len([c for c in cols_u if SUF in c])} cópias)")
-NB_PREF = ("nb_", "nbp_", "nbd_")
-cols_base = [c for c in cols_u if not c.startswith(NB_PREF)]
-marca(f"dados prontos | treino {len(tr)} linhas | {len(cols_u)} colunas ({len(cols_u) - len(cols_base)} do nb26)")
-for nome, d in (("treino", tr), ("validação", va), ("teste", te)):
-    m, pos = mascara(d), (d["y"] == 1).to_numpy()
-    print(f"máscara {nome}: linhas {m.mean():.3f} | positivos mantidos {m[pos].mean():.4f} ({int((m & pos).sum())}/{int(pos.sum())})", flush=True)
+tr, va, te = (add_peca_features(d, sent, alerta) for d in (tr, va, te))
+cols_u, cols_p = colunas_modelo(tr, True), colunas_modelo(tr, False)
+BASE = dict(tree_method="hist", enable_categorical=True, eval_metric="aucpr", n_jobs=1, random_state=7)
+USAR_GRADE = MODO_ROTULO == "vespera"
 
-# ---------------------------------------------------------------- treino
-BASE = dict(tree_method="hist", enable_categorical=True, eval_metric="aucpr", n_jobs=-1)
-NV = len(PARAMS_VAR)
-def kw(seed, **extra):
-    k = dict(BASE, random_state=7 + seed, **PARAMS_VAR[seed % NV])
-    k.update(dict(n_estimators=3000, early_stopping_rounds=100) if EARLY_STOP else dict(n_estimators=600))
-    k.update(extra)
-    return k
 
-def fit_bag(A, B, cols, n_seeds):
-    A, B = so_grade(A), so_grade(B)
-    return [xgb.XGBClassifier(**kw(s)).fit(A[cols], A["y"], eval_set=[(B[cols], B["y"])], verbose=False) for s in range(n_seeds)]
+def candidatos(dados):
+    if USAR_GRADE:
+        candidatos_grade = dados.loc[mascara_grade(dados)]
+        if candidatos_grade["y"].nunique() == 2:
+            return candidatos_grade
+    return dados
 
-def prever(ms, d, cols):
-    return aplicar(d, np.mean([m.predict_proba(d[cols])[:, 1] for m in ms], axis=0))
 
-ap = lambda d, p: ap_por_peca(d, p)[1]
-ms = fit_bag(tr, va, cols_u, N_SEEDS)
-best = [int(m.best_iteration) for m in ms]
-marca(f"modelo treinado | árvores por semente: {best}")
-p_va, p_te = prever(ms, va, cols_u), prever(ms, te, cols_u)
-print(f"{VERSAO}: AP validação {ap(va, p_va):.4f} | AP teste {ap(te, p_te):.4f}", flush=True)
-print("AP por peça no teste:", {k: round(v, 4) for k, v in ap_por_peca(te, p_te)[0].items()}, flush=True)
+def aplicar_fase(dados, prob):
+    return aplicar_grade(dados, prob) if USAR_GRADE else prob
+
+
+def modelo_kw(params):
+    arvores = dict(n_estimators=3000, early_stopping_rounds=100) if EARLY_STOP else dict(n_estimators=N_ARVORES)
+    return {**BASE, **arvores, **params}
+
+
+def fit_unificado(params, A, B):
+    treino, validacao = candidatos(A), candidatos(B)
+    m = xgb.XGBClassifier(**modelo_kw(params)).fit(
+        treino[cols_u], treino["y"], eval_set=[(validacao[cols_u], validacao["y"])], verbose=False,
+    )
+    return m, aplicar_fase(B, m.predict_proba(B[cols_u])[:, 1])
+
+def fit_por_peca(params, A, B):
+    ms, p = {}, np.zeros(len(B))
+    for pc in PECAS:
+        a, k = candidatos(A[A.peca == pc]), (B.peca == pc).to_numpy()
+        b = candidatos(B.loc[k])
+        m = xgb.XGBClassifier(**modelo_kw(params)).fit(a[cols_p], a["y"], eval_set=[(b[cols_p], b["y"])], verbose=False)
+        ms[pc] = m
+        p[k] = m.predict_proba(B.loc[k, cols_p])[:, 1]
+    return ms, aplicar_fase(B, p)
+
+print("Hiperparâmetros fixos:", HIPERPARAMETROS[TIPO_MODELO] if TIPO_MODELO in HIPERPARAMETROS else HIPERPARAMETROS, flush=True)
+tipo = TIPO_MODELO
+cand = {}
+mu, mp = None, {}
+if tipo in ("unificado", "ensemble", "auto"):
+    mu, cand["unificado"] = fit_unificado(PARAMS_UNIFICADO, tr, va)
+if tipo in ("por_peca", "ensemble", "auto"):
+    mp, cand["por_peca"] = fit_por_peca(PARAMS_POR_PECA, tr, va)
+if tipo in ("ensemble", "auto"):
+    cand["ensemble"] = (cand["unificado"] + cand["por_peca"]) / 2
+ap_va = {k: ap_por_peca(va, v)[1] for k, v in cand.items()}
+print("AP validação:", {k: round(v, 4) for k, v in ap_va.items()})
+if tipo == "auto":
+    tipo = max(ap_va, key=ap_va.get)
+    if tipo == "ensemble" and ap_va["ensemble"] - max(ap_va["unificado"], ap_va["por_peca"]) < 0.01:
+        tipo = max(("unificado", "por_peca"), key=ap_va.get)
+print("modelo usado:", tipo)
+art = dict(tipo=tipo, modelo_unificado=mu, cols_unificado=cols_u, modelos_peca=mp, cols_peca=cols_p,
+           usar_grade=USAR_GRADE)
+p_va = prever_prob(art, va)
 limiar, f1_va = melhor_limiar(va["y"], p_va)
-R = {"versao": VERSAO, "ap_validacao": ap(va, p_va), "ap_teste": ap(te, p_te), "ap_por_peca_teste": ap_por_peca(te, p_te)[0],
-     "limiar": limiar, "teste_topk_diario": topk_diario(te, p_te), "modo_rotulo": MODO_ROTULO,
-     "config": dict(seeds=N_SEEDS, params_var=PARAMS_VAR, fase15=FASE15, sent_extra=SENT_EXTRA, estabilidade=ESTABILIDADE,
-                    podar=PODAR, poda_acum=PODA_ACUM, sem_identidade=SEM_IDENTIDADE, selecao=SELECAO, imp_min=IMP_MIN, n_dup=N_DUP, copias=COPIAS, n_colunas=len(cols_u), arvores=best),
-     "colunas_novas": NOVAS}
-imp = pd.Series(np.mean([m.feature_importances_ for m in ms], axis=0), index=cols_u)
-imp.index = [c.split(SUF)[0] for c in imp.index]          # soma as cópias de volta na coluna original
-imp = imp.groupby(level=0).sum().sort_values(ascending=False)
-imp.to_csv(OUT + f"importancia_features_{VERSAO}.csv", header=["importancia"])
-R["top20_importancia"] = imp.head(20).round(4).to_dict()
-R["importancia_novas"] = imp.reindex([c for c in NOVAS if c in imp.index]).round(4).to_dict()
-json.dump(R, open(OUT + f"resultados_{VERSAO}.json", "w"), indent=2, default=float)
-print(json.dumps({k: R[k] for k in ["top20_importancia", "importancia_novas"]}, indent=1, default=float), flush=True)
+print(f"limiar (máx F1 na validação) = {limiar:.3f}  F1 val = {f1_va:.3f}")
 
-# ---------------------------------------------------------------- refit com todos os rótulos + previsão 4T/2023
+# ------------------------------------------------------------ TESTE (uma única vez)
+p_te = prever_prob(art, te)
+R = {"tipo": tipo, "ap_validacao": ap_va, "limiar": limiar, "hiperparametros": HIPERPARAMETROS,
+     "split": {"treino": [str(tr_d[0].date()), str(tr_d[-1].date()), len(tr_d)],
+               "validacao": [str(va_d[0].date()), str(va_d[-1].date()), len(va_d)],
+               "teste": [str(te_d[0].date()), str(te_d[-1].date()), len(te_d)]},
+     "sentinelas": {k: list(v) for k, v in sent.items()}, "alerta_codigos": alerta}
+R["teste_geral"] = metricas(te["y"], p_te) | pr_rec_f1(te["y"], p_te, limiar)
+R["teste_por_peca"] = {}
+for pc in PECAS:
+    k = (te.peca == pc).to_numpy()
+    R["teste_por_peca"][pc] = metricas(te.loc[k, "y"], p_te[k]) | pr_rec_f1(te.loc[k, "y"], p_te[k], limiar)
+R["teste_topk_diario"] = topk_diario(te, p_te)
+# recall por tipo de falha: iminente (<=1h do corte) x antecipada (>1h)
+pos = te["y"] == 1
+imin = pos & (te["antecedencia_h"] <= 1.0001); ante = pos & (te["antecedencia_h"] > 1.0001)
+alvo = p_te >= limiar
+R["recall_iminente"] = dict(n=int(imin.sum()), recall=float(alvo[imin.to_numpy()].mean()) if imin.sum() else None)
+R["recall_antecipada"] = dict(n=int(ante.sum()), recall=float(alvo[ante.to_numpy()].mean()) if ante.sum() else None)
+R["modo_rotulo"] = MODO_ROTULO
+_d, _m = ap_por_peca(te, p_te)
+R["ap_por_peca_teste"], R["ap_media_pecas_teste"] = _d, _m          # <- métrica do Kaggle
+_d, _m = ap_por_peca(va, p_va)
+R["ap_por_peca_validacao"], R["ap_media_pecas_validacao"] = _d, _m
+# AP separado: avalia o modelo só contra falhas antecipadas (remove as iminentes dos positivos)
+m2 = ~imin.to_numpy()
+R["ap_teste_so_antecipadas"] = float(average_precision_score(te.loc[m2, "y"], p_te[m2]))
+# referência: regra simples "alerta das 06h de ontem com o código da peça"
+R["ap_baseline_sentinela_z24"] = ap_por_peca(te, te["sent_z24"].fillna(0).to_numpy())[0]   # referência: só o sensor-sentinela
+# calibração
+bins = [0, 0.005, 0.01, 0.03, 0.1, 0.3, 0.6, 1.0001]
+cb = pd.DataFrame({"p": p_te, "y": te["y"].to_numpy()}); cb["faixa"] = pd.cut(cb["p"], bins, right=False)
+R["calibracao_teste"] = cb.groupby("faixa", observed=True).agg(n=("y", "size"), prob_media=("p", "mean"), taxa_real=("y", "mean")).round(4).reset_index().astype({"faixa": str}).to_dict("records")
+json.dump(R, open(OUT + "resultados.json", "w"), indent=2, default=float)
+te.assign(prob=p_te)[["dia", "id_maquina", "peca", "y", "antecedencia_h", "prob"]].to_parquet(OUT + "predicoes_teste.parquet", index=False)
+va.assign(prob=p_va)[["dia", "id_maquina", "peca", "y", "antecedencia_h", "prob"]].to_parquet(OUT + "predicoes_validacao.parquet", index=False)
+print(json.dumps({k: R[k] for k in ["modo_rotulo", "ap_media_pecas_validacao", "ap_media_pecas_teste", "ap_por_peca_teste", "ap_baseline_sentinela_z24", "teste_topk_diario"]}, indent=1, default=float), flush=True)
+
+# ------------------------------------------------------------ REFIT com todos os rótulos + previsão 4T/2023
 sent_f, alerta_f = derivar_sentinelas(L)
-Lf = add_dep(features(L, sent_f, alerta_f), None, None)
-Q = Lall[(Lall["dia"] >= "2023-09-30") & (Lall["dia"] <= "2023-12-30")].reset_index(drop=True)
-Q = features(Q, sent_f, alerta_f)
-if USAR_NB and USAR_NB_DEP:
-    Q = add_dep(Q, None, nb.pseudo_por_erros("2023-09-30", "2023-12-30"))      # falhas só até 30/09 + pseudo-falhas dos erros
-if USAR_EXTRA:
-    Lf, Q = add_extra([Lf, Q], limiares_pico(Lf))                               # Q herda o passado de Lf (sensores)
-if sel is not None:
-    Lf, Q = sel.adicionar_dups(Lf), sel.adicionar_dups(Q)
-Lfit = so_grade(Lf)
-n_fin = {v: int(np.median([b for s, b in enumerate(best) if s % NV == v]) * 1.2) + 1 for v in range(NV)} if ESTABILIDADE else None
-mods = [xgb.XGBClassifier(**{**kw(s), "n_estimators": (n_fin[s % NV] if ESTABILIDADE else int(m.best_iteration * 1.2) + 1),
-                              "early_stopping_rounds": None}).fit(Lfit[cols_u], Lfit["y"]) for s, m in enumerate(ms)]
-joblib.dump(dict(modelos=mods, cols=cols_u, sentinelas=sent_f, alerta=alerta_f, limiar=limiar), OUT + f"modelo_final_{VERSAO}.joblib")
-marca("refit final concluído")
 
-Q["prob_falha"] = prever(mods, Q, cols_u)
+
+def iters(m):
+    return int(m.best_iteration * 1.2) + 1 if EARLY_STOP else N_ARVORES
+
+
+arvores_unificado = iters(mu) if mu is not None else None
+arvores_peca = {pc: iters(m) for pc, m in mp.items()}
+del tr, va, te, p_va, p_te, cand, cb, art, mp, mu
+taxa_rotulada = L["y"].mean()
+Lf = add_peca_features(L, sent_f, alerta_f)
+del L
+
+
+art_f = dict(tipo=tipo, cols_unificado=cols_u, cols_peca=cols_p, sentinelas=sent_f, alerta_codigos=alerta_f,
+             limiar=limiar, usar_grade=USAR_GRADE)
+if tipo in ("unificado", "ensemble"):
+    treino = candidatos(Lf)
+    art_f["modelo_unificado"] = xgb.XGBClassifier(
+        **BASE, **PARAMS_UNIFICADO, n_estimators=arvores_unificado,
+    ).fit(treino[cols_u], treino["y"])
+    del treino
+if tipo in ("por_peca", "ensemble"):
+    art_f["modelos_peca"] = {}
+    for pc in PECAS:
+        treino = candidatos(Lf[Lf.peca == pc])
+        art_f["modelos_peca"][pc] = xgb.XGBClassifier(
+            **BASE, **PARAMS_POR_PECA, n_estimators=arvores_peca[pc],
+        ).fit(treino[cols_p], treino["y"])
+        del treino
+joblib.dump(art_f, OUT + "modelo_final.joblib")
+share_alerta_treino = (Lf.alerta_peca > 0).mean()
+del Lf
+
+Q = add_peca_features(Q, sent_f, alerta_f)
+Q["prob_falha"] = prever_prob(art_f, Q)
 Q["janela_ate"] = Q["dia"] + pd.Timedelta(days=1, hours=6)
 Q["rank_no_dia"] = Q.groupby("dia")["prob_falha"].rank(ascending=False, method="first").astype(int)
 Q["alerta"] = (Q["prob_falha"] >= limiar).astype(int)
 out = Q[["dia", "janela_ate", "id_maquina", "peca", "prob_falha", "rank_no_dia", "alerta"]].rename(columns={"dia": "data_previsao"})
 out = out.sort_values(["data_previsao", "rank_no_dia"]).reset_index(drop=True)
-out.to_csv(OUT + f"previsoes_out_dez_2023_{VERSAO}.csv", index=False)
-sub = montar_submissao(out, U + "sample_submission.csv")
-sub.to_csv(OUT + f"submission_{VERSAO}.csv", index=False)
-print(f"submission_{VERSAO}.csv:", sub.shape, "<- ENVIE ESTE ao Kaggle")
-print("alertas/dia (média):", round(out.groupby('data_previsao').alerta.sum().mean(), 2), "| taxa média prevista Q4:", round(out.prob_falha.mean(), 4),
-      "| taxa real rotulada:", round(L.y.mean(), 4), "| linhas candidatas Q4:", round(float(mascara(Q).mean()), 4))
-
+out.to_csv(OUT + "previsoes_out_dez_2023.csv", index=False)
+sub = montar_submissao(out, U + "sample_submission.csv")      # <- arquivo para enviar ao Kaggle
+sub.to_csv(OUT + "submission.csv", index=False)
+print("submission.csv:", sub.shape)
+mq = out.groupby(["data_previsao", "id_maquina"])["prob_falha"].apply(lambda s: 1 - np.prod(1 - s)).rename("prob_alguma_peca").reset_index()
+mq.to_csv(OUT + "risco_por_maquina_out_dez_2023.csv", index=False)
+print("previsões:", out.shape, "| dias", out.data_previsao.nunique(), "| alertas/dia (média):", round(out.groupby('data_previsao').alerta.sum().mean(), 2))
+print("taxa média prevista Q4:", round(out.prob_falha.mean(), 4), "| taxa real média rotulada:", round(taxa_rotulada, 4))
+print("share linhas com alerta_peca>0  rotulado:", round(share_alerta_treino, 4), "| Q4:", round((Q.alerta_peca > 0).mean(), 4))

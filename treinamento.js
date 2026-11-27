@@ -13,6 +13,9 @@
   async function requisitar(url, opcoes) {
     const resposta = await fetch(url, { cache:'no-store', ...opcoes });
     if (resposta.status === 404 && url.endsWith('/resultado')) return null;
+    if (!resposta.headers.get('content-type')?.includes('application/json')) {
+      throw new Error(`O servidor de treinamento está indisponível (HTTP ${resposta.status}). Tente novamente quando voltar.`);
+    }
     const dados = await resposta.json();
     if (!resposta.ok) throw new Error(dados.erro || 'Não foi possível acessar o servidor de treinamento.');
     return dados;
