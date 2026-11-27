@@ -20,14 +20,14 @@ if not defined MABI_PY (
 )
 
 :dependencias
-"%MABI_PY%" -c "import pandas, numpy, pyarrow, scipy, sklearn, xgboost, optuna, joblib, starlette, uvicorn, multipart" >nul 2>&1
+"%MABI_PY%" -c "import pandas, numpy, pyarrow, scipy, sklearn, xgboost, joblib, starlette, uvicorn, multipart" >nul 2>&1
 if not errorlevel 1 goto executar
 "%MABI_PY%" -m venv .venv
 if errorlevel 1 goto erro
 set "MABI_PY=.venv\Scripts\python.exe"
 
 :executar
-"%MABI_PY%" -c "import pandas, numpy, pyarrow, scipy, sklearn, xgboost, optuna, joblib, starlette, uvicorn, multipart" >nul 2>&1
+"%MABI_PY%" -c "import pandas, numpy, pyarrow, scipy, sklearn, xgboost, joblib, starlette, uvicorn, multipart" >nul 2>&1
 if errorlevel 1 (
   "%MABI_PY%" -m pip install -r requirements.txt
   if errorlevel 1 goto erro
